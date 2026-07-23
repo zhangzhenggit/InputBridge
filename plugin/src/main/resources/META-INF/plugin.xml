@@ -1,0 +1,28 @@
+<idea-plugin>
+    <id>com.tools.inputbridge</id>
+    <name>InputBridge</name>
+    <vendor>zheng</vendor>
+
+    <description><![CDATA[
+    Sends Unicode text to the focused control on an ADB-connected Android device
+    and displays device text clipboard changes in real time.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.android</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <iconMapper mappingFile="InputBridgeIconMappings.json"/>
+    </extensions>
+
+    <actions>
+        <action id="com.tools.inputbridge.OpenInputBridgeAction"
+                class="com.tools.inputbridge.ui.OpenInputBridgeAction"
+                text="InputBridge"
+                description="Open the InputBridge text dialog"
+                icon="/icons/inputbridge.svg">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <add-to-group group-id="MainToolbarRight" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>
