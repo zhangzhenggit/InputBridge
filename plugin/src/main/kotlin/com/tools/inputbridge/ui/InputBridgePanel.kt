@@ -2,6 +2,7 @@ package com.tools.inputbridge.ui
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
@@ -24,7 +25,10 @@ import com.tools.inputbridge.core.ConnectionState
 import com.tools.inputbridge.core.ConnectionStatus
 import com.tools.inputbridge.core.DeviceInfo
 import com.tools.inputbridge.core.InputResult
+import com.tools.inputbridge.favorites.FavoritesService
 import com.tools.inputbridge.service.InputBridgeProjectService
+import com.tools.inputbridge.ui.favorites.FavoritesManagerDialog
+import com.tools.inputbridge.ui.favorites.FavoritesPopup
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
@@ -48,6 +52,8 @@ import javax.swing.text.DefaultEditorKit
 
 internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disposable, InputBridgeProjectService.Listener {
     private val service = project.service<InputBridgeProjectService>()
+    private val favoritesService = ApplicationManager.getApplication().service<FavoritesService>()
+    private val owningProject = project
     private val deviceModel = DefaultComboBoxModel<DeviceInfo>()
     private val deviceCombo = JComboBox(deviceModel)
     private val refreshButton = JButton("Refresh")
@@ -58,6 +64,11 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
     private val replaceEditorCheckBox = JBCheckBox("Replace editor text")
     private val fetchClipboardButton = JButton("Get current")
     private val replaceOnDeviceCheckBox = JBCheckBox("Replace text on device")
+    private val favoritesButton = editorAction(
+        "Favorites",
+        AllIcons.Nodes.NotFavoriteOnHover,
+        ::showFavorites,
+    )
     private val clearButton = editorAction("Clear editor", AllIcons.Actions.GC, ::clearEditor)
     private val copyButton = editorAction("Copy editor text", AllIcons.Actions.Copy, ::copyEditorText)
     private val sendButton = JButton("Send")
@@ -196,11 +207,20 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
     }
 
     private fun buildEditorSurface(): JComponent {
-        val editorToolbar = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(8), 0)).apply {
-            background = inputArea.background
-            border = JBUI.Borders.empty(4, 8, 6, 8)
+        val favoriteAction = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+            isOpaque = false
+            add(favoritesButton)
+        }
+        val editorActions = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(8), 0)).apply {
+            isOpaque = false
             add(clearButton)
             add(copyButton)
+        }
+        val editorToolbar = JPanel(BorderLayout()).apply {
+            background = inputArea.background
+            border = JBUI.Borders.empty(4, 8, 6, 8)
+            add(favoriteAction, BorderLayout.WEST)
+            add(editorActions, BorderLayout.EAST)
         }
         val scrollPane = JBScrollPane(inputArea).apply {
             border = JBUI.Borders.empty()
@@ -317,6 +337,33 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
         if (text.isNotEmpty()) {
             CopyPasteManager.getInstance().setContents(StringSelection(text))
         }
+        inputArea.requestFocusInWindow()
+    }
+
+    private fun showFavorites() {
+        val insertionTarget = EditorInsertionTarget.capture(inputArea)
+        FavoritesPopup.show(
+            anchor = favoritesButton,
+            service = favoritesService,
+            saveText = favoriteText(),
+            onSave = ::addFavorite,
+            onManage = ::manageFavorites,
+        ) { favorite ->
+            insertionTarget.insert(favorite.content)
+            inputArea.requestFocusInWindow()
+        }
+    }
+
+    private fun favoriteText(): String? =
+        (inputArea.selectedText?.takeIf(String::isNotBlank) ?: inputArea.text).takeIf(String::isNotBlank)
+
+    private fun addFavorite(text: String) {
+        favoritesService.tryAdd(text)
+        inputArea.requestFocusInWindow()
+    }
+
+    private fun manageFavorites() {
+        FavoritesManagerDialog(owningProject, favoritesService).show()
         inputArea.requestFocusInWindow()
     }
 

@@ -42,6 +42,23 @@ Device to plugin:
 
 Device clipboard events never update the host operating system clipboard automatically. The editor remains a normal editable text component, so fetched text can be revised before sending.
 
+## Favorites
+
+Favorites are deliberately independent from the device session:
+
+- an application-level persistent service stores favorites in the IDE configuration file `InputBridgeFavorites.xml`;
+- roaming is disabled, so favorite text is not uploaded through IDE settings synchronization;
+- favorites store content only; list labels are transient previews derived from the first non-empty content line;
+- the editor exposes one native favorite action; its lightweight popup provides selection, direct saving, and management without adding permanent toolbar clutter;
+- selecting a favorite inserts its content at the editor caret, replacing only the current selection, and never sends it automatically;
+- `Save` captures the current selection or full editor text without opening a second dialog, while `Manage` opens the full collection editor;
+- the manager edits a versioned private draft and commits additions, updates, deletions, and ordering only when `Save` is selected; a stale draft cannot overwrite changes from another IDE window;
+- version 1 XML state is migrated to the content-only version 2 model on load; legacy names are discarded after their content is preserved;
+- JSON import accepts version 1 and version 2 backups, merges new content without overwriting the existing collection, and exports the content-only version 2 format; file reads, encoding, and writes run outside the EDT;
+- favorite contents are unique, individual content follows the 256 KiB input limit, and the local collection has a 10 MiB aggregate content limit.
+
+Favorite contents, imported data, and exported data are never logged. Storage is local plain text and is not intended for credentials or secret material.
+
 ## Reliability boundaries
 
 - One selected device lease and at most one active runtime per IDE project.

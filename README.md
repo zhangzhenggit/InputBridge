@@ -11,6 +11,9 @@ The device-side component is a small DEX/JAR pushed to `/data/local/tmp` and lau
 - Device clipboard synchronization into the editor is disabled by default. It can be enabled continuously or requested once with `Get current`.
 - Clipboard writes used internally for Unicode paste are not echoed back as device clipboard updates.
 - Device clipboard text never changes the host operating system clipboard automatically.
+- Editor text or the current selection can be saved directly as a reusable favorite. Favorites contain only the saved text; their list labels are derived from the first non-empty line.
+- Selecting a favorite inserts it at the current caret, replacing only selected text, and never sends it automatically.
+- Favorites are shared across IDE projects and stored locally in the IDE configuration. Their content can be searched, edited, reordered, imported, and exported from the favorites manager.
 - The server session uses an ADB forward to a randomly named localabstract socket.
 - Closing the dialog keeps the live connection for a 30-second grace period. After that, the server process and ADB forward stop while the prepared JAR remains available for a fast resume.
 - Reopening the dialog starts a fresh server process from the retained JAR and immediately reads the device's current clipboard.
@@ -34,6 +37,8 @@ Then run:
 ```
 
 The installable archive is generated as `dist/InputBridge-<version>.zip`. The build task removes older InputBridge archives from this directory before staging the current package.
+
+Favorites are stored as plain text in `InputBridgeFavorites.xml` under the IDE configuration directory. They are not written to the current project or synchronized through the operating-system clipboard. Avoid storing passwords, tokens, or private keys as favorites.
 
 ## Third-party code
 

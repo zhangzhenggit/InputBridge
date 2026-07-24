@@ -4,8 +4,8 @@
     <vendor>zheng</vendor>
 
     <description><![CDATA[
-    Sends Unicode text to the focused control on an ADB-connected Android device
-    and displays device text clipboard changes in real time.
+    Sends Unicode text to the focused control on an ADB-connected Android device,
+    displays device text clipboard changes in real time, and stores reusable local favorites.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
