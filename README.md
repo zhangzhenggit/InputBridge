@@ -24,7 +24,8 @@ The device-side component is a small DEX/JAR pushed to `/data/local/tmp` and lau
 
 ## Build
 
-The current release targets Android Studio 2026.1 or newer (IntelliJ Platform build 261).
+The current release targets Android Studio Meerkat 2024.3.1 or newer
+(IntelliJ Platform build 243).
 
 Configure Android Studio and Android SDK paths in `local.properties`:
 
