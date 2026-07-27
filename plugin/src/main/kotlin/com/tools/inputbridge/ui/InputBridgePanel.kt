@@ -6,6 +6,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.IconLoader
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBCheckBox
@@ -25,10 +26,15 @@ import com.tools.inputbridge.core.ConnectionState
 import com.tools.inputbridge.core.ConnectionStatus
 import com.tools.inputbridge.core.DeviceInfo
 import com.tools.inputbridge.core.InputResult
+import com.tools.inputbridge.favorites.FavoriteAddStatus
+import com.tools.inputbridge.favorites.FavoriteValidationException
 import com.tools.inputbridge.favorites.FavoritesService
+import com.tools.inputbridge.history.InputHistoryService
 import com.tools.inputbridge.service.InputBridgeProjectService
 import com.tools.inputbridge.ui.favorites.FavoritesManagerDialog
 import com.tools.inputbridge.ui.favorites.FavoritesPopup
+import com.tools.inputbridge.ui.favorites.SaveFavoriteDialog
+import com.tools.inputbridge.ui.history.InputHistoryPopup
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
@@ -53,6 +59,7 @@ import javax.swing.text.DefaultEditorKit
 internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disposable, InputBridgeProjectService.Listener {
     private val service = project.service<InputBridgeProjectService>()
     private val favoritesService = ApplicationManager.getApplication().service<FavoritesService>()
+    private val historyService = ApplicationManager.getApplication().service<InputHistoryService>()
     private val owningProject = project
     private val deviceModel = DefaultComboBoxModel<DeviceInfo>()
     private val deviceCombo = JComboBox(deviceModel)
@@ -68,6 +75,11 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
         "Favorites",
         AllIcons.Nodes.NotFavoriteOnHover,
         ::showFavorites,
+    )
+    private val historyButton = editorAction(
+        "Input history",
+        AllIcons.Vcs.History,
+        ::showHistory,
     )
     private val clearButton = editorAction("Clear editor", AllIcons.Actions.GC, ::clearEditor)
     private val copyButton = editorAction("Copy editor text", AllIcons.Actions.Copy, ::copyEditorText)
@@ -207,9 +219,10 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
     }
 
     private fun buildEditorSurface(): JComponent {
-        val favoriteAction = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+        val textActions = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0)).apply {
             isOpaque = false
             add(favoritesButton)
+            add(historyButton)
         }
         val editorActions = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(8), 0)).apply {
             isOpaque = false
@@ -219,7 +232,7 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
         val editorToolbar = JPanel(BorderLayout()).apply {
             background = inputArea.background
             border = JBUI.Borders.empty(4, 8, 6, 8)
-            add(favoriteAction, BorderLayout.WEST)
+            add(textActions, BorderLayout.WEST)
             add(editorActions, BorderLayout.EAST)
         }
         val scrollPane = JBScrollPane(inputArea).apply {
@@ -358,13 +371,46 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
         (inputArea.selectedText?.takeIf(String::isNotBlank) ?: inputArea.text).takeIf(String::isNotBlank)
 
     private fun addFavorite(text: String) {
-        favoritesService.tryAdd(text)
+        val dialog = SaveFavoriteDialog(
+            owningProject,
+            favoritesService.suggestedTitle(text),
+            { title -> favoritesService.titleValidationError(title) },
+        )
+        if (!dialog.showAndGet()) {
+            inputArea.requestFocusInWindow()
+            return
+        }
+        try {
+            favoritesService.tryAdd(dialog.favoriteTitle, text).saveErrorMessage()?.let { message ->
+                Messages.showErrorDialog(owningProject, message, "Unable to save favorite")
+            }
+        } catch (error: FavoriteValidationException) {
+            Messages.showErrorDialog(owningProject, error.message, "Unable to save favorite")
+        }
         inputArea.requestFocusInWindow()
     }
+
+    private fun FavoriteAddStatus.saveErrorMessage(): String? =
+        when (this) {
+            FavoriteAddStatus.READY -> null
+            FavoriteAddStatus.EMPTY -> "Enter text to save"
+            FavoriteAddStatus.ITEM_TOO_LARGE -> "Favorite text exceeds 256 KB"
+            FavoriteAddStatus.DUPLICATE -> "This text is already saved"
+            FavoriteAddStatus.COLLECTION_FULL -> "The favorites limit has been reached"
+            FavoriteAddStatus.STORAGE_FULL -> "The favorites storage limit has been reached"
+        }
 
     private fun manageFavorites() {
         FavoritesManagerDialog(owningProject, favoritesService).show()
         inputArea.requestFocusInWindow()
+    }
+
+    private fun showHistory() {
+        InputHistoryPopup.show(historyButton, historyService.history()) { item ->
+            inputArea.text = item.content
+            inputArea.caretPosition = inputArea.document.length
+            inputArea.requestFocusInWindow()
+        }
     }
 
     private fun updateEditorActions() {

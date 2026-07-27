@@ -8,19 +8,20 @@ import kotlin.test.assertTrue
 
 class FavoritesServiceTest {
     @Test
-    fun `persists content through a copied state`() {
+    fun `persists title and content through a copied state`() {
         val service = FavoritesService()
-        assertEquals(FavoriteAddStatus.READY, service.tryAdd("你好\nHello"))
+        assertEquals(FavoriteAddStatus.READY, service.tryAdd("Greeting", "你好\nHello"))
 
         val restored = FavoritesService()
         restored.loadState(service.state)
 
+        assertEquals(listOf("Greeting"), restored.favorites().map(FavoriteItem::title))
         assertEquals(listOf("你好\nHello"), restored.favorites().map(FavoriteItem::content))
-        assertEquals(2, restored.state.version)
+        assertEquals(3, restored.state.version)
     }
 
     @Test
-    fun `migrates version 1 state and discards legacy names`() {
+    fun `migrates legacy state with a generated title`() {
         val legacyState = FavoritesService.StoredState().apply {
             version = 1
             favorites += FavoritesService.StoredFavorite().apply {
@@ -40,24 +41,52 @@ class FavoritesServiceTest {
         val service = FavoritesService()
         service.loadState(restoredState)
 
+        assertEquals(listOf("Legacy content"), service.favorites().map(FavoriteItem::title))
         assertEquals(listOf("Legacy content"), service.favorites().map(FavoriteItem::content))
-        assertEquals(2, service.state.version)
+        assertEquals(3, service.state.version)
+    }
+
+    @Test
+    fun `migrates content-only favorites with unique generated titles`() {
+        val state = FavoritesService.StoredState().apply {
+            version = 2
+            favorites += storedFavorite("first", "Same first line\nOne")
+            favorites += storedFavorite("second", "Same first line\nTwo")
+        }
+        val service = FavoritesService()
+
+        service.loadState(state)
+
+        assertEquals(
+            listOf("Same first line", "Same first line (2)"),
+            service.favorites().map(FavoriteItem::title),
+        )
     }
 
     @Test
     fun `quick add ignores duplicate content`() {
         val service = FavoritesService()
 
-        assertEquals(FavoriteAddStatus.READY, service.tryAdd("same text"))
-        assertEquals(FavoriteAddStatus.DUPLICATE, service.tryAdd("same text"))
+        assertEquals(FavoriteAddStatus.READY, service.tryAdd("First", "same text"))
+        assertEquals(FavoriteAddStatus.DUPLICATE, service.tryAdd("Second", "same text"))
         assertEquals(1, service.favorites().size)
+    }
+
+    @Test
+    fun `quick add rejects duplicate titles`() {
+        val service = FavoritesService()
+        assertEquals(FavoriteAddStatus.READY, service.tryAdd("Device", "first"))
+
+        kotlin.test.assertFailsWith<FavoriteValidationException> {
+            service.tryAdd("device", "second")
+        }
     }
 
     @Test
     fun `stale manager snapshot cannot overwrite newer favorites`() {
         val service = FavoritesService()
         val snapshot = service.snapshot()
-        assertEquals(FavoriteAddStatus.READY, service.tryAdd("added elsewhere"))
+        assertEquals(FavoriteAddStatus.READY, service.tryAdd("Elsewhere", "added elsewhere"))
 
         val result = service.replaceAll(snapshot.favorites, snapshot.revision)
 

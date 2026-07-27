@@ -48,16 +48,32 @@ Favorites are deliberately independent from the device session:
 
 - an application-level persistent service stores favorites in the IDE configuration file `InputBridgeFavorites.xml`;
 - roaming is disabled, so favorite text is not uploaded through IDE settings synchronization;
-- favorites store content only; list labels are transient previews derived from the first non-empty content line;
+- favorites store a required, case-insensitively unique title with their content;
 - the editor exposes one native favorite action; its lightweight popup provides selection, direct saving, and management without adding permanent toolbar clutter;
 - selecting a favorite inserts its content at the editor caret, replacing only the current selection, and never sends it automatically;
-- `Save` captures the current selection or full editor text without opening a second dialog, while `Manage` opens the full collection editor;
+- `Save` captures the current selection or full editor text and requests only a short title, preselected from the first non-empty content line; `Manage` opens the full collection editor;
 - the manager edits a versioned private draft and commits additions, updates, deletions, and ordering only when `Save` is selected; a stale draft cannot overwrite changes from another IDE window;
-- version 1 XML state is migrated to the content-only version 2 model on load; legacy names are discarded after their content is preserved;
-- JSON import accepts version 1 and version 2 backups, merges new content without overwriting the existing collection, and exports the content-only version 2 format; file reads, encoding, and writes run outside the EDT;
+- version 1 and version 2 XML state is migrated to the titled version 3 model on load; generated title collisions receive a numeric suffix;
+- JSON import accepts version 1, version 2, and version 3 backups, merges new content without overwriting the existing collection, and exports titles and content in version 3 format; file reads, encoding, and writes run outside the EDT;
+- popup filtering and manager search match both title and content;
 - favorite contents are unique, individual content follows the 256 KiB input limit, and the local collection has a 10 MiB aggregate content limit.
 
 Favorite contents, imported data, and exported data are never logged. Storage is local plain text and is not intended for credentials or secret material.
+
+## Input history
+
+Input history is independent from the Android clipboard and the device session lifetime:
+
+- a separate application-level persistent service stores history in `InputBridgeHistory.xml` with roaming disabled;
+- the project service holds sent text only until the matching device acknowledgement arrives;
+- only a successful acknowledgement commits text to history; rejected, failed, timed-out, disconnected, and locally invalid requests are discarded;
+- history is newest-first and globally deduplicated, so sending identical text promotes its existing entry;
+- the history popup is a lightweight, filterable list with no management footer; selecting an entry restores the complete text to the editor and never sends it automatically;
+- history recording is enabled by default with a 50-entry limit, configurable to 20, 50, 100, or 200 entries under `Settings | Tools | InputBridge`;
+- reducing the limit removes the oldest entries, and clearing history is an explicit confirmed action;
+- individual entries use the 256 KiB input limit and the retained collection has a 10 MiB aggregate cap.
+
+History content is never logged or copied to the operating-system clipboard. It is stored locally as plain text and should not be used for passwords, tokens, or private keys.
 
 ## Reliability boundaries
 

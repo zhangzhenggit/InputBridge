@@ -17,12 +17,12 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
+import com.intellij.ui.components.JBTextField
 import com.intellij.ui.scale.JBUIScale
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import com.tools.inputbridge.favorites.FavoriteItem
-import com.tools.inputbridge.favorites.FavoriteRules
 import com.tools.inputbridge.favorites.FavoriteValidationException
 import com.tools.inputbridge.favorites.FavoritesJsonCodec
 import com.tools.inputbridge.favorites.FavoritesService
@@ -34,6 +34,8 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.util.UUID
 import javax.swing.Action
+import javax.swing.Box
+import javax.swing.BoxLayout
 import javax.swing.DefaultListModel
 import javax.swing.JComponent
 import javax.swing.JList
@@ -50,8 +52,9 @@ internal class FavoritesManagerDialog(
     private val listModel = DefaultListModel<Draft>()
     private val favoritesList = JBList(listModel)
     private val searchField = SearchTextField(false)
+    private val titleField = JBTextField()
     private val contentArea = JBTextArea()
-    private var updatingContent = false
+    private var updatingFields = false
 
     init {
         title = "Manage favorites"
@@ -76,9 +79,18 @@ internal class FavoritesManagerDialog(
             add(searchField, BorderLayout.NORTH)
             add(listPanel, BorderLayout.CENTER)
         }
+        val fieldLabels = JPanel().apply {
+            isOpaque = false
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            add(JBLabel("Title"))
+            add(Box.createVerticalStrut(JBUI.scale(4)))
+            add(titleField)
+            add(Box.createVerticalStrut(JBUI.scale(8)))
+            add(JBLabel("Content"))
+        }
         val right = JPanel(BorderLayout(0, JBUI.scale(4))).apply {
             border = JBUI.Borders.emptyLeft(8)
-            add(JBLabel("Content"), BorderLayout.NORTH)
+            add(fieldLabels, BorderLayout.NORTH)
             add(JBScrollPane(contentArea), BorderLayout.CENTER)
         }
         return JBSplitter(false, 0.34f).apply {
@@ -121,6 +133,7 @@ internal class FavoritesManagerDialog(
         favoritesList.addListSelectionListener {
             if (!it.valueIsAdjusting) loadSelected()
         }
+        titleField.document.addDocumentListener(documentListener(::updateSelectedDraft))
         contentArea.apply {
             lineWrap = true
             wrapStyleWord = true
@@ -136,6 +149,7 @@ internal class FavoritesManagerDialog(
         val now = System.currentTimeMillis()
         val draft = Draft(
             id = UUID.randomUUID().toString(),
+            title = "",
             content = "",
             createdAtMillis = now,
             updatedAtMillis = now,
@@ -143,7 +157,7 @@ internal class FavoritesManagerDialog(
         drafts += draft
         searchField.text = ""
         rebuildList(draft.id)
-        contentArea.requestFocusInWindow()
+        titleField.requestFocusInWindow()
     }
 
     private fun removeSelected() {
@@ -172,7 +186,11 @@ internal class FavoritesManagerDialog(
 
     private fun rebuildList(preferredId: String?) {
         val query = searchField.text.trim()
-        val visible = drafts.filter { query.isEmpty() || it.content.contains(query, ignoreCase = true) }
+        val visible = drafts.filter {
+            query.isEmpty() ||
+                it.title.contains(query, ignoreCase = true) ||
+                it.content.contains(query, ignoreCase = true)
+        }
         listModel.clear()
         visible.forEach(listModel::addElement)
         favoritesList.selectedIndex = visible.indexOfFirst { it.id == preferredId }
@@ -183,16 +201,19 @@ internal class FavoritesManagerDialog(
     }
 
     private fun loadSelected() {
-        updatingContent = true
+        updatingFields = true
         val selected = favoritesList.selectedValue
+        titleField.text = selected?.title.orEmpty()
         contentArea.text = selected?.content.orEmpty()
+        titleField.isEnabled = selected != null
         contentArea.isEnabled = selected != null
-        updatingContent = false
+        updatingFields = false
     }
 
     private fun updateSelectedDraft() {
-        if (updatingContent) return
+        if (updatingFields) return
         val selected = favoritesList.selectedValue ?: return
+        selected.title = titleField.text
         selected.content = contentArea.text
         favoritesList.repaint()
     }
@@ -276,21 +297,23 @@ internal class FavoritesManagerDialog(
             hasFocus: Boolean,
         ) {
             border = JBUI.Borders.empty(4, 8)
-            append(value?.let { FavoriteRules.preview(it.content) }.orEmpty())
+            append(value?.title.orEmpty())
         }
     }
 
     private data class Draft(
         val id: String,
+        var title: String,
         var content: String,
         val createdAtMillis: Long,
         val updatedAtMillis: Long,
     ) {
-        fun toFavorite(): FavoriteItem = FavoriteItem(id, content, createdAtMillis, updatedAtMillis)
+        fun toFavorite(): FavoriteItem = FavoriteItem(id, title, content, createdAtMillis, updatedAtMillis)
 
         companion object {
             fun fromFavorite(favorite: FavoriteItem): Draft = Draft(
                 favorite.id,
+                favorite.title,
                 favorite.content,
                 favorite.createdAtMillis,
                 favorite.updatedAtMillis,

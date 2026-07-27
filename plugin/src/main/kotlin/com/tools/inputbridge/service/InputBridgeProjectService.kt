@@ -3,6 +3,7 @@ package com.tools.inputbridge.service
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -14,6 +15,8 @@ import com.tools.inputbridge.core.ConnectionState
 import com.tools.inputbridge.core.ConnectionStatus
 import com.tools.inputbridge.core.DeviceInfo
 import com.tools.inputbridge.core.InputResult
+import com.tools.inputbridge.history.InputHistoryService
+import com.tools.inputbridge.history.PendingInputHistory
 import com.tools.inputbridge.session.DeviceServerLease
 import com.tools.inputbridge.session.InputBridgeProtocol
 import com.tools.inputbridge.session.InputBridgeSession
@@ -48,6 +51,8 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
     private val runtimeGeneration = AtomicInteger()
     private val deviceRefreshGeneration = AtomicInteger()
     private val adb = AdbClient(AdbLocator.locate(project.basePath))
+    private val historyService = ApplicationManager.getApplication().service<InputHistoryService>()
+    private val pendingInputHistory = PendingInputHistory()
 
     @Volatile private var desiredSerial: String? = null
     @Volatile private var connectionStatus = ConnectionStatus(ConnectionState.DISCONNECTED)
@@ -136,7 +141,9 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
                 notifyInputResult(InputResult(0, false, "Input text exceeds 256 KB"))
             else -> executeSafely {
                 runCatching {
-                    session?.sendText(text, appendEnter, replaceExisting) ?: error("Device session is not ready")
+                    val requestId = session?.sendText(text, appendEnter, replaceExisting)
+                        ?: error("Device session is not ready")
+                    pendingInputHistory.register(requestId, text)
                 }.onFailure { notifyInputResult(InputResult(0, false, it.message ?: "Unable to send text")) }
             }
         }
@@ -248,7 +255,11 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
         }
 
         override fun onInputResult(result: InputResult) {
-            if (isActiveRuntime(serial, requestGeneration, requestRuntimeGeneration)) notifyInputResult(result)
+            executeSafely {
+                if (!isActiveRuntime(serial, requestGeneration, requestRuntimeGeneration)) return@executeSafely
+                pendingInputHistory.complete(result)?.let(historyService::recordSuccessfulInput)
+                notifyInputResult(result)
+            }
         }
 
         override fun onDisconnected(message: String) {
@@ -296,6 +307,7 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
     private fun closeRuntime() {
         val current = session
         session = null
+        pendingInputHistory.clear()
         if (current != null) runtimeGeneration.incrementAndGet()
         current?.close()
     }

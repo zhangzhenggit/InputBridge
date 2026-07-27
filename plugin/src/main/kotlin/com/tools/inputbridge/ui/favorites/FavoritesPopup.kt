@@ -66,7 +66,7 @@ internal object FavoritesPopup {
         builder.setVisibleRowCount(favorites.size.coerceIn(1, MAX_VISIBLE_ROWS))
         builder.setAutoselectOnMouseMove(true)
         builder.setAutoSelectIfEmpty(false)
-        builder.setNamerForFiltering(FavoriteItem::content)
+        builder.setNamerForFiltering { "${it.title}\n${it.content}" }
         builder.setCancelOnClickOutside(true)
         builder.setResizable(false)
         builder.setMovable(false)
@@ -141,7 +141,10 @@ internal object FavoritesPopup {
         ) {
             border = JBUI.Borders.empty(2, 9)
             font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
-            value?.let { append(FavoriteRules.preview(it.content)) }
+            toolTipText = value?.let { FavoriteRules.preview(it.content) }
+            value?.let {
+                append(it.title)
+            }
         }
     }
 

@@ -27,19 +27,30 @@ class FavoriteRulesTest {
 
     @Test
     fun `collection requires unique identifiers and content`() {
-        val first = FavoriteRules.create("same")
-        val duplicate = FavoriteRules.create("same")
+        val first = FavoriteRules.create("First", "same")
+        val duplicate = FavoriteRules.create("Second", "same")
         assertFailsWith<FavoriteValidationException> {
             FavoriteRules.validateCollection(listOf(first, duplicate))
         }
         assertFailsWith<FavoriteValidationException> {
-            FavoriteRules.validateCollection(listOf(first, first.copy(content = "different")))
+            FavoriteRules.validateCollection(listOf(first, first.copy(title = "Second", content = "different")))
+        }
+    }
+
+    @Test
+    fun `titles are normalized and unique without regard to case`() {
+        assertEquals("Device address", FavoriteRules.validateTitle(" Device \n address "))
+        val first = FavoriteRules.create("Device", "first")
+        val second = FavoriteRules.create("device", "second")
+
+        assertFailsWith<FavoriteValidationException> {
+            FavoriteRules.validateCollection(listOf(first, second))
         }
     }
 
     @Test
     fun `addition evaluation centralizes normalization and blocking reasons`() {
-        val existing = listOf(FavoriteRules.create("existing"))
+        val existing = listOf(FavoriteRules.create("Existing", "existing"))
 
         val ready = FavoriteRules.evaluateAddition("first\r\nsecond", existing)
 
@@ -50,6 +61,14 @@ class FavoriteRulesTest {
         assertEquals(
             FavoriteAddStatus.ITEM_TOO_LARGE,
             FavoriteRules.evaluateAddition("x".repeat(FavoriteRules.MAX_CONTENT_BYTES + 1), existing).status,
+        )
+    }
+
+    @Test
+    fun `suggested titles are derived and disambiguated`() {
+        assertEquals(
+            "设备地址 (3)",
+            FavoriteRules.suggestedTitle("\n设备地址\n正文", listOf("设备地址", "设备地址 (2)")),
         )
     }
 }

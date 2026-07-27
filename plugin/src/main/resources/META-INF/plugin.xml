@@ -5,7 +5,8 @@
 
     <description><![CDATA[
     Sends Unicode text to the focused control on an ADB-connected Android device,
-    displays device text clipboard changes in real time, and stores reusable local favorites.
+    displays device text clipboard changes in real time, and stores titled favorites
+    and successful input history locally.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -13,6 +14,11 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <iconMapper mappingFile="InputBridgeIconMappings.json"/>
+        <applicationConfigurable
+                parentId="tools"
+                id="com.tools.inputbridge.settings"
+                displayName="InputBridge"
+                instance="com.tools.inputbridge.settings.InputBridgeConfigurable"/>
     </extensions>
 
     <actions>

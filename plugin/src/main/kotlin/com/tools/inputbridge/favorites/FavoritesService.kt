@@ -46,11 +46,34 @@ class FavoritesService : PersistentStateComponent<FavoritesService.StoredState> 
         FavoriteRules.evaluateAddition(content, favorites())
 
     @Synchronized
-    internal fun tryAdd(content: String): FavoriteAddStatus {
+    internal fun suggestedTitle(content: String): String =
+        FavoriteRules.suggestedTitle(content, favorites().map(FavoriteItem::title))
+
+    @Synchronized
+    internal fun titleValidationError(title: String, excludingId: String? = null): String? {
+        val normalized = try {
+            FavoriteRules.validateTitle(title)
+        } catch (error: FavoriteValidationException) {
+            return error.message
+        }
+        val duplicate = favorites().any {
+            it.id != excludingId && FavoriteRules.titleKey(it.title) == FavoriteRules.titleKey(normalized)
+        }
+        return if (duplicate) "A favorite with this title already exists" else null
+    }
+
+    @Synchronized
+    internal fun tryAdd(title: String, content: String): FavoriteAddStatus {
         val current = favorites()
         val addition = FavoriteRules.evaluateAddition(content, current)
         if (addition.status != FavoriteAddStatus.READY) return addition.status
-        replaceAllInternal(current + FavoriteRules.create(requireNotNull(addition.content)))
+        val normalizedTitle = FavoriteRules.validateTitle(title)
+        if (current.any { FavoriteRules.titleKey(it.title) == FavoriteRules.titleKey(normalizedTitle) }) {
+            throw FavoriteValidationException("A favorite with this title already exists")
+        }
+        replaceAllInternal(
+            current + FavoriteRules.create(normalizedTitle, requireNotNull(addition.content)),
+        )
         return FavoriteAddStatus.READY
     }
 
@@ -68,7 +91,11 @@ class FavoritesService : PersistentStateComponent<FavoritesService.StoredState> 
             val previous = currentById[item.id]
             item.copy(
                 createdAtMillis = previous?.createdAtMillis ?: item.createdAtMillis.takeIf { it > 0 } ?: now,
-                updatedAtMillis = if (previous == null || previous.content != item.content) {
+                updatedAtMillis = if (
+                    previous == null ||
+                    previous.title != item.title ||
+                    previous.content != item.content
+                ) {
                     now
                 } else {
                     previous.updatedAtMillis
@@ -85,6 +112,8 @@ class FavoritesService : PersistentStateComponent<FavoritesService.StoredState> 
     private fun sanitize(state: StoredState): StoredState {
         val restored = mutableListOf<FavoriteItem>()
         val ids = HashSet<String>()
+        val retainedTitles = mutableListOf<String>()
+        val titleKeys = HashSet<String>()
         val contents = HashSet<String>()
         var totalBytes = 0
         val now = System.currentTimeMillis()
@@ -96,8 +125,16 @@ class FavoritesService : PersistentStateComponent<FavoritesService.StoredState> 
             totalBytes = candidateTotal
             val id = stored.id.takeIf { it.isNotBlank() && ids.add(it) }
                 ?: UUID.randomUUID().toString().also(ids::add)
+            val title = stored.title
+                .takeIf { state.version >= TITLED_VERSION }
+                ?.let { candidate -> runCatching { FavoriteRules.validateTitle(candidate) }.getOrNull() }
+                ?.takeIf { FavoriteRules.titleKey(it) !in titleKeys }
+                ?: FavoriteRules.suggestedTitle(content, retainedTitles)
+            retainedTitles += title
+            titleKeys += FavoriteRules.titleKey(title)
             restored += FavoriteItem(
                 id = id,
+                title = title,
                 content = content,
                 createdAtMillis = stored.createdAtMillis.takeIf { it > 0 } ?: now,
                 updatedAtMillis = stored.updatedAtMillis.takeIf { it > 0 } ?: now,
@@ -121,22 +158,25 @@ class FavoritesService : PersistentStateComponent<FavoritesService.StoredState> 
 
     class StoredFavorite {
         var id: String = ""
+        var title: String = ""
         var content: String = ""
         var createdAtMillis: Long = 0
         var updatedAtMillis: Long = 0
 
         fun copy(): StoredFavorite = StoredFavorite().also { copy ->
             copy.id = id
+            copy.title = title
             copy.content = content
             copy.createdAtMillis = createdAtMillis
             copy.updatedAtMillis = updatedAtMillis
         }
 
-        fun toFavorite(): FavoriteItem = FavoriteItem(id, content, createdAtMillis, updatedAtMillis)
+        fun toFavorite(): FavoriteItem = FavoriteItem(id, title, content, createdAtMillis, updatedAtMillis)
 
         companion object {
             fun fromFavorite(favorite: FavoriteItem): StoredFavorite = StoredFavorite().also {
                 it.id = favorite.id
+                it.title = favorite.title
                 it.content = favorite.content
                 it.createdAtMillis = favorite.createdAtMillis
                 it.updatedAtMillis = favorite.updatedAtMillis
@@ -145,6 +185,7 @@ class FavoritesService : PersistentStateComponent<FavoritesService.StoredState> 
     }
 
     private companion object {
-        const val CURRENT_VERSION = 2
+        const val TITLED_VERSION = 3
+        const val CURRENT_VERSION = TITLED_VERSION
     }
 }
