@@ -15,6 +15,7 @@ import com.tools.inputbridge.core.ConnectionState
 import com.tools.inputbridge.core.ConnectionStatus
 import com.tools.inputbridge.core.DeviceInfo
 import com.tools.inputbridge.core.InputResult
+import com.tools.inputbridge.core.TextStyleRun
 import com.tools.inputbridge.history.InputHistoryService
 import com.tools.inputbridge.history.PendingInputHistory
 import com.tools.inputbridge.session.DeviceServerLease
@@ -247,9 +248,9 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
         requestGeneration: Int,
         requestRuntimeGeneration: Int,
     ) = object : InputBridgeSession.Callbacks {
-        override fun onClipboard(sequence: Long, text: String?) {
+        override fun onClipboard(sequence: Long, text: String?, runs: List<TextStyleRun>) {
             if (!isActiveRuntime(serial, requestGeneration, requestRuntimeGeneration)) return
-            val update = ClipboardUpdate(serial, sequence, text)
+            val update = ClipboardUpdate(serial, sequence, text, runs)
             latestClipboardBySerial[serial] = update
             dispatch { listeners.forEach { it.onClipboardChanged(update) } }
         }

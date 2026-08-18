@@ -33,6 +33,7 @@ data class ClipboardUpdate(
     val serial: String,
     val sequence: Long,
     val text: String?,
+    val runs: List<TextStyleRun> = emptyList(),
     val receivedAtMillis: Long = System.currentTimeMillis(),
 )
 

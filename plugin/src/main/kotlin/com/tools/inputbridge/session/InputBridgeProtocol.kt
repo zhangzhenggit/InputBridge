@@ -1,5 +1,7 @@
 package com.tools.inputbridge.session
 
+import com.tools.inputbridge.core.TextStyleKind
+import com.tools.inputbridge.core.TextStyleRun
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
@@ -8,9 +10,12 @@ import java.io.EOFException
 import java.nio.charset.StandardCharsets
 
 internal object InputBridgeProtocol {
-    const val VERSION = 4
+    const val VERSION = 5
     const val MAX_INPUT_BYTES = 256 * 1024
-    private const val MAX_FRAME_BYTES = 1024 * 1024 + 64
+    const val MAX_CLIPBOARD_SPANS = 4096
+    private const val SPAN_BYTES = 13
+    private const val CLIPBOARD_HEADER_BYTES = 18
+    private const val MAX_FRAME_BYTES = 1024 * 1024 + MAX_CLIPBOARD_SPANS * SPAN_BYTES + 64
 
     private const val CLIENT_PASTE_TEXT = 1
     private const val CLIENT_PING = 2
@@ -25,7 +30,11 @@ internal object InputBridgeProtocol {
 
     sealed interface ServerMessage {
         data class Hello(val version: Int, val sdk: Int, val model: String) : ServerMessage
-        data class Clipboard(val sequence: Long, val text: String?) : ServerMessage
+        data class Clipboard(
+            val sequence: Long,
+            val text: String?,
+            val runs: List<TextStyleRun> = emptyList(),
+        ) : ServerMessage
         data class Ack(val requestId: Long, val success: Boolean, val message: String) : ServerMessage
         data class Error(val message: String) : ServerMessage
         data class Pong(val value: Long) : ServerMessage
@@ -44,19 +53,14 @@ internal object InputBridgeProtocol {
             return when (val type = body.readUnsignedByte()) {
                 SERVER_HELLO -> {
                     require(length >= 9) { "Invalid hello frame" }
-                    ServerMessage.Hello(body.readInt(), body.readInt(), body.readRemainingText(length - 9))
+                    ServerMessage.Hello(body.readInt(), body.readInt(), body.readText(length - 9))
                 }
-                SERVER_CLIPBOARD -> {
-                    require(length >= 10) { "Invalid clipboard frame" }
-                    val sequence = body.readLong()
-                    val hasText = body.readBoolean()
-                    ServerMessage.Clipboard(sequence, body.readRemainingText(length - 10).takeIf { hasText })
-                }
+                SERVER_CLIPBOARD -> readClipboard(body, length)
                 SERVER_ACK -> {
                     require(length >= 10) { "Invalid acknowledgement frame" }
-                    ServerMessage.Ack(body.readLong(), body.readBoolean(), body.readRemainingText(length - 10))
+                    ServerMessage.Ack(body.readLong(), body.readBoolean(), body.readText(length - 10))
                 }
-                SERVER_ERROR -> ServerMessage.Error(body.readRemainingText(length - 1))
+                SERVER_ERROR -> ServerMessage.Error(body.readText(length - 1))
                 SERVER_PONG -> {
                     require(length == 9) { "Invalid pong frame" }
                     ServerMessage.Pong(body.readLong())
@@ -105,7 +109,34 @@ internal object InputBridgeProtocol {
         }
     }
 
-    private fun DataInputStream.readRemainingText(length: Int): String {
+    private fun readClipboard(body: DataInputStream, length: Int): ServerMessage.Clipboard {
+        require(length >= CLIPBOARD_HEADER_BYTES) { "Invalid clipboard frame" }
+        val sequence = body.readLong()
+        val hasText = body.readBoolean()
+        val textBytes = body.readInt()
+        require(textBytes in 0..(length - CLIPBOARD_HEADER_BYTES)) { "Invalid clipboard text length: $textBytes" }
+        val text = body.readText(textBytes)
+        val spanCount = body.readInt()
+        require(spanCount in 0..MAX_CLIPBOARD_SPANS) { "Invalid clipboard span count: $spanCount" }
+        require(length == CLIPBOARD_HEADER_BYTES + textBytes + spanCount * SPAN_BYTES) {
+            "Invalid clipboard frame length: $length"
+        }
+        val runs = ArrayList<TextStyleRun>(spanCount)
+        repeat(spanCount) {
+            val start = body.readInt()
+            val end = body.readInt()
+            val kind = TextStyleKind.fromWireId(body.readUnsignedByte())
+            val value = body.readInt()
+            // Unknown kinds and ranges outside the decoded text are dropped rather than rejected,
+            // so a newer device server degrades to plain text instead of killing the session.
+            if (kind != null && start in 0 until end && end <= text.length) {
+                runs += TextStyleRun(start, end, kind, value)
+            }
+        }
+        return ServerMessage.Clipboard(sequence, text.takeIf { hasText }, runs)
+    }
+
+    private fun DataInputStream.readText(length: Int): String {
         require(length >= 0)
         val bytes = ByteArray(length)
         readFully(bytes)

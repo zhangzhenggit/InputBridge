@@ -8,10 +8,13 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PersistableBundle;
+import android.text.Html;
+import android.text.Spanned;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -50,6 +53,7 @@ final class BridgeController implements AutoCloseable {
     private boolean monitoring;
     private boolean hasPublishedClipboard;
     private String lastPublishedClipboard;
+    private int[] lastPublishedSpans = StyleSpans.NONE;
 
     BridgeController(DataInputStream input, DataOutputStream output) throws ReflectiveOperationException {
         this.input = input;
@@ -143,35 +147,71 @@ final class BridgeController implements AutoCloseable {
 
     private void publishCurrentClipboard(boolean force) throws IOException {
         ClipData clip = clipboard.getPrimaryClip();
-        String text = readClipboardText(clip);
-        if (!shouldPublishClipboard(clip, text, force)) {
+        CharSequence content = readClipboardContent(clip);
+        String text = content == null ? null : content.toString();
+        int[] spans = StyleSpans.extract(content, Protocol.MAX_CLIPBOARD_SPANS);
+        if (!shouldPublishClipboard(clip, text, spans, force)) {
             return;
         }
         if (!Protocol.clipboardFits(text)) {
             Protocol.writeError(output, "Device clipboard text exceeds 1 MB and was not transferred");
             return;
         }
-        Protocol.writeClipboard(output, clipboardSequence.incrementAndGet(), text);
+        Protocol.writeClipboard(output, clipboardSequence.incrementAndGet(), text, spans);
         lastPublishedClipboard = text;
+        lastPublishedSpans = spans;
         hasPublishedClipboard = true;
     }
 
-    private boolean shouldPublishClipboard(ClipData clip, String text, boolean force) {
+    private boolean shouldPublishClipboard(ClipData clip, String text, int[] spans, boolean force) {
         if (force) {
             return true;
         }
         if (isInternalClipboard(clip)) {
             return false;
         }
-        return !hasPublishedClipboard || !Objects.equals(lastPublishedClipboard, text);
+        if (!hasPublishedClipboard) {
+            return true;
+        }
+        return !Objects.equals(lastPublishedClipboard, text) || !Arrays.equals(lastPublishedSpans, spans);
     }
 
-    private String readClipboardText(ClipData clip) {
+    private CharSequence readClipboardContent(ClipData clip) {
         if (clip == null || clip.getItemCount() == 0) {
             return null;
         }
-        CharSequence value = clip.getItemAt(0).getText();
-        return value == null ? null : value.toString();
+        return readItemContent(clip.getItemAt(0));
+    }
+
+    /**
+     * Styled text wins over the plain fallback, so clips created with
+     * {@code ClipData.newHtmlText} keep their formatting instead of arriving unstyled.
+     */
+    private CharSequence readItemContent(ClipData.Item item) {
+        CharSequence text = item.getText();
+        if (text instanceof Spanned) {
+            return text;
+        }
+        String html = item.getHtmlText();
+        if (html != null) {
+            CharSequence parsed = trimTrailingBreaks(Html.fromHtml(html, Html.FROM_HTML_MODE_COMPACT));
+            if (parsed != null && parsed.length() > 0) {
+                return parsed;
+            }
+        }
+        return text;
+    }
+
+    /** Block-level HTML makes Android append trailing newlines that were never copied. */
+    private CharSequence trimTrailingBreaks(CharSequence parsed) {
+        if (parsed == null) {
+            return null;
+        }
+        int end = parsed.length();
+        while (end > 0 && parsed.charAt(end - 1) == '\n') {
+            end--;
+        }
+        return end == parsed.length() ? parsed : parsed.subSequence(0, end);
     }
 
     private boolean isInternalClipboard(ClipData clip) {

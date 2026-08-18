@@ -9,12 +9,15 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 final class Protocol {
-    static final int VERSION = 4;
+    static final int VERSION = 5;
     private static final int FLAG_APPEND_ENTER = 1;
     private static final int FLAG_REPLACE_EXISTING = 1 << 1;
     static final int MAX_INPUT_BYTES = 256 * 1024;
     static final int MAX_CLIPBOARD_BYTES = 1024 * 1024;
-    private static final int MAX_FRAME_BYTES = MAX_CLIPBOARD_BYTES + 64;
+    static final int MAX_CLIPBOARD_SPANS = 4096;
+    static final int SPAN_BYTES = 13;
+    private static final int MAX_FRAME_BYTES =
+            MAX_CLIPBOARD_BYTES + MAX_CLIPBOARD_SPANS * SPAN_BYTES + 64;
 
     static final int CLIENT_PASTE_TEXT = 1;
     static final int CLIENT_PING = 2;
@@ -95,17 +98,27 @@ final class Protocol {
         });
     }
 
-    static void writeClipboard(DataOutputStream output, long sequence, String text) throws IOException {
+    static void writeClipboard(DataOutputStream output, long sequence, String text, int[] spans) throws IOException {
         byte[] bytes = text == null ? new byte[0] : text.getBytes(StandardCharsets.UTF_8);
         if (bytes.length > MAX_CLIPBOARD_BYTES) {
             throw new IOException("Clipboard text exceeds the size limit");
         }
+        int[] runs = spans == null ? StyleSpans.NONE : spans;
+        int count = Math.min(runs.length / StyleSpans.VALUES_PER_SPAN, MAX_CLIPBOARD_SPANS);
         writeFrame(output, SERVER_CLIPBOARD, new BodyWriter() {
             @Override
             public void write(DataOutputStream body) throws IOException {
                 body.writeLong(sequence);
                 body.writeBoolean(text != null);
+                body.writeInt(bytes.length);
                 body.write(bytes);
+                body.writeInt(count);
+                for (int index = 0; index < count * StyleSpans.VALUES_PER_SPAN; index += StyleSpans.VALUES_PER_SPAN) {
+                    body.writeInt(runs[index]);
+                    body.writeInt(runs[index + 1]);
+                    body.writeByte(runs[index + 2]);
+                    body.writeInt(runs[index + 3]);
+                }
             }
         });
     }

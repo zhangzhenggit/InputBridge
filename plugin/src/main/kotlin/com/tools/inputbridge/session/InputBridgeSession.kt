@@ -3,6 +3,7 @@ package com.tools.inputbridge.session
 import com.tools.inputbridge.adb.AdbClient
 import com.tools.inputbridge.adb.ProcessRunner
 import com.tools.inputbridge.core.InputResult
+import com.tools.inputbridge.core.TextStyleRun
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.DataInputStream
@@ -25,7 +26,7 @@ class InputBridgeSession(
     private val callbacks: Callbacks,
 ) : AutoCloseable {
     interface Callbacks {
-        fun onClipboard(sequence: Long, text: String?)
+        fun onClipboard(sequence: Long, text: String?, runs: List<TextStyleRun>)
         fun onInputResult(result: InputResult)
         fun onDisconnected(message: String)
     }
@@ -148,7 +149,8 @@ class InputBridgeSession(
             try {
                 while (!closed.get()) {
                     when (val message = InputBridgeProtocol.read(input) ?: break) {
-                        is InputBridgeProtocol.ServerMessage.Clipboard -> callbacks.onClipboard(message.sequence, message.text)
+                        is InputBridgeProtocol.ServerMessage.Clipboard ->
+                            callbacks.onClipboard(message.sequence, message.text, message.runs)
                         is InputBridgeProtocol.ServerMessage.Ack -> {
                             pendingRequests -= message.requestId
                             callbacks.onInputResult(InputResult(message.requestId, message.success, message.message))

@@ -1,6 +1,6 @@
 # InputBridge
 
-InputBridge is an Android Studio plugin for entering Unicode text on an ADB-connected Android device and viewing device text clipboard changes in real time.
+InputBridge is an Android Studio plugin for entering Unicode text on an ADB-connected Android device and viewing device clipboard changes, with their formatting, in real time.
 
 The device-side component is a small DEX/JAR pushed to `/data/local/tmp` and launched with `app_process`. It is not installed as an APK and does not change the active input method or system settings.
 
@@ -9,6 +9,8 @@ The device-side component is a small DEX/JAR pushed to `/data/local/tmp` and lau
 - Text is pasted into the currently focused device control through a single Unicode-safe path.
 - Selecting the first online device prepares the temporary server before the first input.
 - Device clipboard synchronization into the editor is disabled by default. It can be enabled continuously or requested once with `Get current`.
+- Device clipboard formatting is shown in the editor: bold, italic, underline, strikethrough, colors, relative size, monospace, links, and super/subscript. Colors that would be illegible against the IDE theme are skipped.
+- Formatting is display only. Text sent to the device, saved as a favorite, or recorded in history is always the plain text, so styling never changes what is delivered.
 - Clipboard writes used internally for Unicode paste are not echoed back as device clipboard updates.
 - Device clipboard text never changes the host operating system clipboard automatically.
 - Editor text or the current selection can be saved as a titled reusable favorite. Existing content-only favorites receive unique generated titles automatically.

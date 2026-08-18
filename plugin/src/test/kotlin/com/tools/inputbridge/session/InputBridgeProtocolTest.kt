@@ -1,5 +1,7 @@
 package com.tools.inputbridge.session
 
+import com.tools.inputbridge.core.TextStyleKind
+import com.tools.inputbridge.core.TextStyleRun
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
@@ -71,15 +73,16 @@ class InputBridgeProtocolTest {
         )
 
         val clipboard = readFrame(17) {
-            writeLong(7)
-            writeBoolean(true)
-            write("设备剪贴板".toByteArray())
+            writeClipboardBody(7, "设备剪贴板")
         } as InputBridgeProtocol.ServerMessage.Clipboard
         assertEquals("设备剪贴板", clipboard.text)
+        assertTrue(clipboard.runs.isEmpty())
 
         val emptyClipboard = readFrame(17) {
             writeLong(8)
             writeBoolean(false)
+            writeInt(0)
+            writeInt(0)
         } as InputBridgeProtocol.ServerMessage.Clipboard
         assertNull(emptyClipboard.text)
 
@@ -109,6 +112,79 @@ class InputBridgeProtocolTest {
         }
         assertFailsWith<IllegalArgumentException> {
             InputBridgeProtocol.read(DataInputStream(ByteArrayInputStream(malformed.toByteArray())))
+        }
+    }
+
+    @Test
+    fun `reads clipboard style runs`() {
+        val clipboard = readFrame(17) {
+            writeClipboardBody(
+                sequence = 11,
+                text = "粗体 link",
+                spans = listOf(
+                    Triple(0, 2, TextStyleKind.BOLD.wireId to 0),
+                    Triple(3, 7, TextStyleKind.FOREGROUND.wireId to 0xFFB71C1C.toInt()),
+                ),
+            )
+        } as InputBridgeProtocol.ServerMessage.Clipboard
+
+        assertEquals("粗体 link", clipboard.text)
+        assertEquals(
+            listOf(
+                TextStyleRun(0, 2, TextStyleKind.BOLD, 0),
+                TextStyleRun(3, 7, TextStyleKind.FOREGROUND, 0xFFB71C1C.toInt()),
+            ),
+            clipboard.runs,
+        )
+    }
+
+    @Test
+    fun `drops style runs the editor cannot place`() {
+        val clipboard = readFrame(17) {
+            writeClipboardBody(
+                sequence = 12,
+                text = "abc",
+                spans = listOf(
+                    Triple(0, 99, TextStyleKind.BOLD.wireId to 0),
+                    Triple(2, 1, TextStyleKind.ITALIC.wireId to 0),
+                    Triple(0, 3, 200 to 0),
+                    Triple(1, 2, TextStyleKind.UNDERLINE.wireId to 0),
+                ),
+            )
+        } as InputBridgeProtocol.ServerMessage.Clipboard
+
+        assertEquals(listOf(TextStyleRun(1, 2, TextStyleKind.UNDERLINE, 0)), clipboard.runs)
+    }
+
+    @Test
+    fun `rejects a clipboard frame whose declared sizes do not fill it`() {
+        assertFailsWith<IllegalArgumentException> {
+            readFrame(17) {
+                writeLong(13)
+                writeBoolean(true)
+                writeInt(3)
+                write("abc".toByteArray())
+                writeInt(2)
+            }
+        }
+    }
+
+    private fun DataOutputStream.writeClipboardBody(
+        sequence: Long,
+        text: String,
+        spans: List<Triple<Int, Int, Pair<Int, Int>>> = emptyList(),
+    ) {
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        writeLong(sequence)
+        writeBoolean(true)
+        writeInt(bytes.size)
+        write(bytes)
+        writeInt(spans.size)
+        spans.forEach { (start, end, style) ->
+            writeInt(start)
+            writeInt(end)
+            writeByte(style.first)
+            writeInt(style.second)
         }
     }
 

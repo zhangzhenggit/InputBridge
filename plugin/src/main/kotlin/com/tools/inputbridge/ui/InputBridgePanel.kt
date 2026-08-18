@@ -12,20 +12,17 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.labels.LinkLabel
 import com.intellij.ui.components.labels.LinkListener
-import com.intellij.ui.scale.JBUIScale
 import com.intellij.util.IconUtil
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.UIUtil
-import com.tools.inputbridge.core.ClipboardTextMerger
 import com.tools.inputbridge.core.ClipboardUpdate
 import com.tools.inputbridge.core.ConnectionState
 import com.tools.inputbridge.core.ConnectionStatus
 import com.tools.inputbridge.core.DeviceInfo
 import com.tools.inputbridge.core.InputResult
+import com.tools.inputbridge.core.StyledText
 import com.tools.inputbridge.favorites.FavoriteAddStatus
 import com.tools.inputbridge.favorites.FavoriteValidationException
 import com.tools.inputbridge.favorites.FavoritesService
@@ -66,7 +63,7 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
     private val refreshButton = JButton("Refresh")
     private val connectButton = JButton("Connect")
     private val statusLabel = JBLabel("Disconnected")
-    private val inputArea = JBTextArea(12, 48)
+    private val inputArea = StyledInputArea()
     private val syncClipboardCheckBox = JBCheckBox("Update automatically")
     private val replaceEditorCheckBox = JBCheckBox("Replace editor text")
     private val fetchClipboardButton = JButton("Get current")
@@ -158,7 +155,7 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
         }
         lastAppliedClipboard = identity
         fetchRequested = false
-        applyClipboardText(update.text.orEmpty())
+        applyClipboard(update)
     }
 
     override fun onClipboardCleared(serial: String?) {
@@ -248,15 +245,6 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
     }
 
     private fun configureComponents() {
-        inputArea.apply {
-            lineWrap = true
-            wrapStyleWord = true
-            border = JBUI.Borders.empty(10)
-            font = JBFont.create(
-                UIUtil.getLabelFont(UIUtil.FontSize.NORMAL).deriveFont(JBUIScale.scale(14f)),
-                false,
-            )
-        }
         syncClipboardCheckBox.apply {
             isSelected = false
             toolTipText = "Apply future device clipboard changes while this dialog is open"
@@ -331,22 +319,20 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
         if (connectionState == ConnectionState.READY) service.requestClipboardSnapshot()
     }
 
-    private fun applyClipboardText(text: String) {
-        inputArea.text = ClipboardTextMerger.merge(
-            current = inputArea.text,
-            incoming = text,
+    private fun applyClipboard(update: ClipboardUpdate) {
+        inputArea.applyStyled(
+            StyledText(update.text.orEmpty(), update.runs),
             replace = replaceEditorCheckBox.isSelected,
         )
-        inputArea.caretPosition = inputArea.document.length
     }
 
     private fun clearEditor() {
-        inputArea.text = ""
+        inputArea.setPlainText("")
         inputArea.requestFocusInWindow()
     }
 
     private fun copyEditorText() {
-        val text = inputArea.selectedText?.takeIf(String::isNotEmpty) ?: inputArea.text
+        val text = inputArea.selectedText?.takeIf(String::isNotEmpty) ?: inputArea.plainText
         if (text.isNotEmpty()) {
             CopyPasteManager.getInstance().setContents(StringSelection(text))
         }
@@ -368,7 +354,7 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
     }
 
     private fun favoriteText(): String? =
-        (inputArea.selectedText?.takeIf(String::isNotBlank) ?: inputArea.text).takeIf(String::isNotBlank)
+        (inputArea.selectedText?.takeIf(String::isNotBlank) ?: inputArea.plainText).takeIf(String::isNotBlank)
 
     private fun addFavorite(text: String) {
         val dialog = SaveFavoriteDialog(
@@ -407,8 +393,7 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
 
     private fun showHistory() {
         InputHistoryPopup.show(historyButton, historyService.history()) { item ->
-            inputArea.text = item.content
-            inputArea.caretPosition = inputArea.document.length
+            inputArea.setPlainText(item.content)
             inputArea.requestFocusInWindow()
         }
     }
@@ -421,7 +406,7 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
 
     private fun send() {
         service.sendText(
-            inputArea.text,
+            inputArea.plainText,
             appendEnter = false,
             replaceExisting = replaceOnDeviceCheckBox.isSelected,
         )

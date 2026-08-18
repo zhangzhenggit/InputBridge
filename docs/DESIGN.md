@@ -32,15 +32,29 @@ Plugin to device:
 Device to plugin:
 
 - register an Android primary-clipboard listener;
-- send the initial clipboard and subsequent text changes;
+- prefer the styled form of the clipboard item so its formatting survives, parsing device HTML on the device when the item carries it rather than the plain fallback;
+- flatten the Android text spans that survived the clipboard binder call into `(start, end, kind, value)` records and send them beside the text;
 - identify and suppress clipboard writes created internally for Unicode paste;
-- coalesce repeated Android callbacks and publish a clipboard state only when its text changes;
+- coalesce repeated Android callbacks and publish a clipboard state only when its text or spans change;
 - cache the most recent value per device in the project service;
 - leave the editor unchanged while synchronization is disabled;
 - apply clipboard text only when automatic updates are enabled or the current value is requested;
 - append fetched text on a new line by default, or replace the editor when that option is selected.
 
 Device clipboard events never update the host operating system clipboard automatically. The editor remains a normal editable text component, so fetched text can be revised before sending.
+
+## Device text formatting
+
+The editor is a styled Swing text surface, so device clipboard formatting is visible instead of being flattened away:
+
+- styling is transmitted as structured span records rather than HTML, so the character content is exactly the plain-text value the device published and the offsets need no remapping;
+- the editor renders formatting for presentation only. Input, favorites, and history all read the document's plain text, so what InputBridge sends is unchanged by any styling;
+- because nothing parses or renders untrusted markup, device clipboard content cannot reference remote resources or reach a HTML renderer;
+- device colors are authored for the application they were copied from, so a foreground is applied only when it keeps a 3:1 contrast ratio against the surface behind it. Foregrounds resolve after backgrounds so each is measured against what ends up under it;
+- relative sizes scale the editor font and are clamped to a legible range;
+- text typed next to styled content inherits the adjacent styling, which is standard styled-editor behavior and cannot change what is sent.
+
+Clips created with `ClipData.newHtmlText` are parsed on the device with `Html.fromHtml`, so their text comes from the parsed markup rather than the application's plain fallback.
 
 ## Favorites
 
@@ -79,8 +93,8 @@ History content is never logged or copied to the operating-system clipboard. It 
 
 - One selected device lease and at most one active runtime per IDE project.
 - Each device discovery request returns directly to its originating dialog on the IDE event thread; stale results are discarded.
-- UTF-8 throughout; 256 KiB maximum input and 1 MiB maximum clipboard event.
-- Frame lengths and message shapes are validated before allocation/use.
+- UTF-8 throughout; 256 KiB maximum input, 1 MiB maximum clipboard event, and 4096 maximum clipboard style spans.
+- Frame lengths and message shapes are validated before allocation/use, including the declared clipboard text length and span count.
 - Writes are synchronized so clipboard callbacks and acknowledgements cannot interleave frames.
 - Hello always precedes clipboard frames, and clipboard snapshots/events are emitted in serial order.
 - Each device-server process marks its own clipboard writes with a unique session identifier. Automatic events ignore those writes, while an explicit current-value request always returns the actual device clipboard.
