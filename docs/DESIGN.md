@@ -32,14 +32,16 @@ Plugin to device:
 Device to plugin:
 
 - register an Android primary-clipboard listener;
-- prefer the styled form of the clipboard item so its formatting survives, parsing device HTML on the device when the item carries it rather than the plain fallback;
+- concatenate every clip item, preferring styled text over the plain fallback and falling back to a URI string, so clips without a plain-text item are no longer reported as empty;
 - flatten the Android text spans that survived the clipboard binder call into `(start, end, kind, value)` records and send them beside the text;
 - identify and suppress clipboard writes created internally for Unicode paste;
 - coalesce repeated Android callbacks and publish a clipboard state only when its text or spans change;
 - cache the most recent value per device in the project service;
 - leave the editor unchanged while synchronization is disabled;
 - apply clipboard text only when automatic updates are enabled or the current value is requested;
-- append fetched text on a new line by default, or replace the editor when that option is selected.
+- append fetched text on a new line by default, or replace the editor when that option is selected;
+- treat a value that is only blank characters as nothing to import and name it in the status line, because an invisible import cannot be told apart from a broken synchronization;
+- report a requested snapshot whose clip yields no text, and a clipboard read that throws, to the plugin instead of failing silently. Both messages carry only metadata: item counts, MIME types, field lengths, and the failure type.
 
 Device clipboard events never update the host operating system clipboard automatically. The editor remains a normal editable text component, so fetched text can be revised before sending.
 

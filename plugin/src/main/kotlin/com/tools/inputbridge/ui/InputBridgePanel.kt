@@ -320,10 +320,21 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
     }
 
     private fun applyClipboard(update: ClipboardUpdate) {
+        val incoming = StyledText(update.text.orEmpty(), update.runs)
         inputArea.applyStyled(
-            StyledText(update.text.orEmpty(), update.runs),
+            if (incoming.isImportable) incoming else StyledText(""),
             replace = replaceEditorCheckBox.isSelected,
         )
+        // Importing nothing leaves the editor looking inert, so name what the device actually held.
+        if (!incoming.isImportable) {
+            showStatus(blankClipboardMessage(incoming.text), StatusTone.NEUTRAL)
+        }
+    }
+
+    private fun blankClipboardMessage(incoming: String): String = when {
+        incoming.isEmpty() -> "Device clipboard holds no text"
+        incoming.length == 1 -> "Device clipboard holds a single blank character"
+        else -> "Device clipboard holds ${incoming.length} blank characters only"
     }
 
     private fun clearEditor() {
@@ -455,6 +466,8 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
 
     private fun showStatus(message: String, tone: StatusTone) {
         statusLabel.text = message
+        // Clipboard diagnostics outrun the label width, so the full text stays reachable.
+        statusLabel.toolTipText = message
         statusLabel.foreground = when (tone) {
             StatusTone.SUCCESS -> JBColor(Color(0x2E, 0x7D, 0x32), Color(0x81, 0xC7, 0x84))
             StatusTone.ERROR -> JBColor(Color(0xB7, 0x1C, 0x1C), Color(0xEF, 0x9A, 0x9A))

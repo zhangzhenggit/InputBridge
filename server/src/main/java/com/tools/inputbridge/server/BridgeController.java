@@ -4,11 +4,14 @@ import android.content.ClipData;
 import android.content.ClipDescription;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PersistableBundle;
 import android.text.Html;
+import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 
 import java.io.DataInputStream;
@@ -141,7 +144,14 @@ final class BridgeController implements AutoCloseable {
         } catch (IOException error) {
             closed = true;
         } catch (RuntimeException error) {
+            // The exception message can quote clipboard content, so only its type is reported.
             Log.error("Unable to read the device clipboard", error);
+            try {
+                Protocol.writeError(output, "Unable to read the device clipboard: "
+                        + error.getClass().getSimpleName());
+            } catch (IOException ignored) {
+                closed = true;
+            }
         }
     }
 
@@ -150,6 +160,9 @@ final class BridgeController implements AutoCloseable {
         CharSequence content = readClipboardContent(clip);
         String text = content == null ? null : content.toString();
         int[] spans = StyleSpans.extract(content, Protocol.MAX_CLIPBOARD_SPANS);
+        if (force && content == null && clip != null) {
+            Protocol.writeError(output, describeUnreadableClip(clip));
+        }
         if (!shouldPublishClipboard(clip, text, spans, force)) {
             return;
         }
@@ -176,11 +189,29 @@ final class BridgeController implements AutoCloseable {
         return !Objects.equals(lastPublishedClipboard, text) || !Arrays.equals(lastPublishedSpans, spans);
     }
 
+    /** Concatenates every clip item, keeping the styling Android preserved across the binder call. */
     private CharSequence readClipboardContent(ClipData clip) {
         if (clip == null || clip.getItemCount() == 0) {
             return null;
         }
-        return readItemContent(clip.getItemAt(0));
+        CharSequence single = null;
+        SpannableStringBuilder combined = null;
+        for (int index = 0; index < clip.getItemCount(); index++) {
+            CharSequence piece = readItemContent(clip.getItemAt(index));
+            if (piece == null || piece.length() == 0) {
+                continue;
+            }
+            if (single == null && combined == null) {
+                single = piece;
+            } else {
+                if (combined == null) {
+                    combined = new SpannableStringBuilder(single);
+                    single = null;
+                }
+                combined.append('\n').append(piece);
+            }
+        }
+        return combined != null ? combined : single;
     }
 
     /**
@@ -189,17 +220,54 @@ final class BridgeController implements AutoCloseable {
      */
     private CharSequence readItemContent(ClipData.Item item) {
         CharSequence text = item.getText();
-        if (text instanceof Spanned) {
+        if (text instanceof Spanned && text.length() > 0) {
             return text;
         }
         String html = item.getHtmlText();
-        if (html != null) {
+        if (html != null && !html.isEmpty()) {
             CharSequence parsed = trimTrailingBreaks(Html.fromHtml(html, Html.FROM_HTML_MODE_COMPACT));
             if (parsed != null && parsed.length() > 0) {
                 return parsed;
             }
         }
-        return text;
+        if (text != null && text.length() > 0) {
+            return text;
+        }
+        Uri uri = item.getUri();
+        if (uri != null) {
+            return uri.toString();
+        }
+        Intent intent = item.getIntent();
+        return intent == null ? null : intent.toUri(Intent.URI_INTENT_SCHEME);
+    }
+
+    /**
+     * Describes the shape of a clip that produced no text. Types, counts, and lengths are
+     * metadata, so this never exposes clipboard content.
+     */
+    private String describeUnreadableClip(ClipData clip) {
+        ClipDescription description = clip.getDescription();
+        StringBuilder detail = new StringBuilder("Device clipboard has no readable text: ");
+        detail.append(clip.getItemCount()).append(" item(s), types [");
+        for (int index = 0; index < description.getMimeTypeCount(); index++) {
+            if (index > 0) {
+                detail.append(' ');
+            }
+            detail.append(description.getMimeType(index));
+        }
+        detail.append(']');
+        for (int index = 0; index < clip.getItemCount(); index++) {
+            ClipData.Item item = clip.getItemAt(index);
+            CharSequence text = item.getText();
+            String html = item.getHtmlText();
+            detail.append(", item").append(index)
+                    .append(" text=").append(text == null ? "none" : String.valueOf(text.length()))
+                    .append(text instanceof Spanned ? "/spanned" : "")
+                    .append(" html=").append(html == null ? "none" : String.valueOf(html.length()))
+                    .append(" uri=").append(item.getUri() == null ? "none" : "yes")
+                    .append(" intent=").append(item.getIntent() == null ? "none" : "yes");
+        }
+        return detail.toString();
     }
 
     /** Block-level HTML makes Android append trailing newlines that were never copied. */

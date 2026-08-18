@@ -11,6 +11,8 @@ The device-side component is a small DEX/JAR pushed to `/data/local/tmp` and lau
 - Device clipboard synchronization into the editor is disabled by default. It can be enabled continuously or requested once with `Get current`.
 - Device clipboard formatting is shown in the editor: bold, italic, underline, strikethrough, colors, relative size, monospace, links, and super/subscript. Colors that would be illegible against the IDE theme are skipped.
 - Formatting is display only. Text sent to the device, saved as a favorite, or recorded in history is always the plain text, so styling never changes what is delivered.
+- Clips that carry no plain-text item, such as a copied link or HTML-only content, are still imported. Every clip item is read, device-side HTML is parsed on the device, and a bare URI or intent falls back to its text form.
+- A clipboard holding only blank characters is named in the status line instead of being imported, so an invisible value is never mistaken for a failed synchronization.
 - Clipboard writes used internally for Unicode paste are not echoed back as device clipboard updates.
 - Device clipboard text never changes the host operating system clipboard automatically.
 - Editor text or the current selection can be saved as a titled reusable favorite. Existing content-only favorites receive unique generated titles automatically.

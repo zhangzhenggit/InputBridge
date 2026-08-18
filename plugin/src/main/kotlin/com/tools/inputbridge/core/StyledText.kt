@@ -44,4 +44,13 @@ data class TextStyleRun(
 data class StyledText(
     val text: String,
     val runs: List<TextStyleRun> = emptyList(),
-)
+) {
+    /**
+     * Whitespace-only clipboard content imports as an invisible edit, which is
+     * indistinguishable from a broken sync, so it counts as nothing to import.
+     * Blankness follows Kotlin's rules, which include the space separators Java's
+     * `Character.isWhitespace` omits, such as the non-breaking space.
+     */
+    val isImportable: Boolean
+        get() = text.isNotBlank()
+}
