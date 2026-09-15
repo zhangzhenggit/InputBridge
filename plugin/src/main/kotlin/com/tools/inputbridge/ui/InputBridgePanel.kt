@@ -338,16 +338,11 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
             if (incoming.isImportable) incoming else StyledText(""),
             replace = replaceEditorCheckBox.isSelected,
         )
-        // Importing nothing leaves the editor looking inert, so name what the device actually held.
-        if (!incoming.isImportable) {
-            showStatus(blankClipboardMessage(incoming.text), StatusTone.NEUTRAL)
-        }
-    }
-
-    private fun blankClipboardMessage(incoming: String): String = when {
-        incoming.isEmpty() -> "Device clipboard holds no text"
-        incoming.length == 1 -> "Device clipboard holds a single blank character"
-        else -> "Device clipboard holds ${incoming.length} blank characters only"
+        // Every import reports its outcome, so a notice about an earlier blank clipboard cannot outlive it.
+        showStatus(
+            ClipboardImportStatus.message(incoming),
+            if (incoming.isImportable) StatusTone.SUCCESS else StatusTone.NEUTRAL,
+        )
     }
 
     private fun clearEditor() {

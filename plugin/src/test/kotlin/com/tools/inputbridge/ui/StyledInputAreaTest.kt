@@ -97,6 +97,44 @@ class StyledInputAreaTest {
     }
 
     @Test
+    fun `colors links without underlining them`() = onEdt {
+        val editor = editor("")
+
+        editor.applyStyled(
+            StyledText("link", listOf(TextStyleRun(0, 4, TextStyleKind.LINK, 0))),
+            replace = true,
+        )
+
+        assertTrue(isStyled(editor, 0, StyleConstants.Foreground))
+        assertFalse(isStyled(editor, 0, StyleConstants.Underline))
+    }
+
+    @Test
+    fun `shrinks superscripts and subscripts on the normal baseline`() = onEdt {
+        val editor = editor("")
+
+        editor.applyStyled(
+            StyledText(
+                "x2y3",
+                listOf(
+                    TextStyleRun(1, 2, TextStyleKind.SUPERSCRIPT, 0),
+                    TextStyleRun(3, 4, TextStyleKind.SUBSCRIPT, 0),
+                ),
+            ),
+            replace = true,
+        )
+
+        for (offset in listOf(1, 3)) {
+            assertEquals(
+                TextStyleAttributes.scaledFontSize(editor.font.size, TextStyleAttributes.SCRIPT_SIZE_PERCENT),
+                attributesAt(editor, offset).getAttribute(StyleConstants.FontSize),
+            )
+            assertFalse(isStyled(editor, offset, StyleConstants.Superscript))
+            assertFalse(isStyled(editor, offset, StyleConstants.Subscript))
+        }
+    }
+
+    @Test
     fun `drops device styling when the editor is rewritten`() = onEdt {
         val editor = editor("")
         editor.applyStyled(

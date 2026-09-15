@@ -51,6 +51,7 @@ Device to plugin:
 - apply clipboard text only when automatic updates are enabled or the current value is requested;
 - append fetched text on a new line by default, or replace the editor when that option is selected;
 - treat a value that is only blank characters as nothing to import and name it in the status line, because an invisible import cannot be told apart from a broken synchronization;
+- report every successful import in the status line too, so a notice about an earlier blank clipboard never sits beside imported text;
 - report a requested snapshot whose clip yields no text, and a clipboard read that throws, to the plugin instead of failing silently. Both messages carry only metadata: item counts, MIME types, field lengths, and the failure type.
 
 Device clipboard events never update the host operating system clipboard automatically. The editor remains a normal editable text component, so fetched text can be revised before sending.
@@ -64,6 +65,8 @@ The editor is a styled Swing text surface, so device clipboard formatting is vis
 - because nothing parses or renders untrusted markup, device clipboard content cannot reference remote resources or reach a HTML renderer;
 - device colors are authored for the application they were copied from, so a foreground is applied only when it keeps a 3:1 contrast ratio against the surface behind it. Foregrounds resolve after backgrounds so each is measured against what ends up under it;
 - relative sizes scale the editor font and are clamped to a legible range;
+- links take the IDE link color without an underline, because underlines crowd CJK glyphs and make densely linked text hard to read;
+- superscripts and subscripts render at 75% size on the normal baseline. Swing's raised and lowered baselines enlarge every wrapped row they fall on, which left citation-heavy excerpts with uneven line spacing;
 - text typed next to styled content inherits the adjacent styling, which is standard styled-editor behavior and cannot change what is sent.
 
 Clips created with `ClipData.newHtmlText` are parsed on the device with `Html.fromHtml`, so their text comes from the parsed markup rather than the application's plain fallback.

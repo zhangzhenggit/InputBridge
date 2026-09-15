@@ -97,12 +97,13 @@ internal class StyledInputArea : JTextPane() {
             TextStyleKind.RELATIVE_SIZE ->
                 StyleConstants.setFontSize(attributes, TextStyleAttributes.scaledFontSize(font.size, run.value))
             TextStyleKind.MONOSPACE -> StyleConstants.setFontFamily(attributes, Font.MONOSPACED)
-            TextStyleKind.LINK -> {
-                StyleConstants.setUnderline(attributes, true)
-                StyleConstants.setForeground(attributes, LINK_COLOR)
-            }
-            TextStyleKind.SUPERSCRIPT -> StyleConstants.setSuperscript(attributes, true)
-            TextStyleKind.SUBSCRIPT -> StyleConstants.setSubscript(attributes, true)
+            // Links are colored but not underlined: underlines crowd CJK glyphs and turn dense linked text into noise.
+            TextStyleKind.LINK -> StyleConstants.setForeground(attributes, LINK_COLOR)
+            TextStyleKind.SUPERSCRIPT, TextStyleKind.SUBSCRIPT ->
+                StyleConstants.setFontSize(
+                    attributes,
+                    TextStyleAttributes.scaledFontSize(font.size, TextStyleAttributes.SCRIPT_SIZE_PERCENT),
+                )
             TextStyleKind.FOREGROUND -> return null
         }
         return attributes

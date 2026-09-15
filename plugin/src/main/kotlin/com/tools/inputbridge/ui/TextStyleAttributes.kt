@@ -18,6 +18,13 @@ internal object TextStyleAttributes {
     const val MIN_FONT_SIZE = 8
     const val MAX_FONT_SIZE = 48
 
+    /**
+     * Superscripts and subscripts render smaller on the normal baseline. Swing's raised and lowered
+     * baselines grow the height of every wrapped row they land on, which leaves citation-heavy text
+     * such as encyclopedia excerpts with uneven line spacing.
+     */
+    const val SCRIPT_SIZE_PERCENT = 75
+
     /** Android colors carry alpha the editor cannot honour per character. */
     fun opaqueColor(argb: Int): Color = Color(argb and 0xFFFFFF)
 
