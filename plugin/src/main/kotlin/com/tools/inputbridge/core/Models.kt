@@ -6,11 +6,19 @@ data class DeviceInfo(
     val model: String?,
 ) {
     val online: Boolean
-        get() = state == "device"
+        get() = state == ONLINE_STATE
 
-    override fun toString(): String = when {
-        !model.isNullOrBlank() -> "$model ($serial)"
-        else -> serial
+    override fun toString(): String {
+        val name = if (!model.isNullOrBlank()) "$model ($serial)" else serial
+        return if (online) name else "$name · $state"
+    }
+
+    companion object {
+        const val ONLINE_STATE = "device"
+        const val UNAUTHORIZED_STATE = "unauthorized"
+
+        /** Stands in for a selected device that ADB no longer lists. */
+        const val DETACHED_STATE = "disconnected"
     }
 }
 
@@ -19,6 +27,9 @@ enum class ConnectionState {
     CONNECTING,
     READY,
     RECONNECTING,
+
+    /** The selected device is not online; the next connection attempt waits for ADB to report it. */
+    WAITING,
     SUSPENDED,
     ERROR,
 }

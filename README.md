@@ -8,6 +8,8 @@ The device-side component is a small DEX/JAR pushed to `/data/local/tmp` and lau
 
 - Text is pasted into the currently focused device control through a single Unicode-safe path.
 - Selecting the first online device prepares the temporary server before the first input.
+- While the dialog is open, the device list follows ADB attach, detach, and authorization changes without a manual refresh. An idle dialog connects to a device as soon as it comes online, and another online device can be selected at any time to switch to it.
+- If the connected device goes offline, the dialog switches to another online device. When no other device is available, it waits for ADB to report the device again and reconnects immediately.
 - Device clipboard synchronization into the editor is disabled by default. It can be enabled continuously or requested once with `Get current`.
 - Device clipboard formatting is shown in the editor: bold, italic, underline, strikethrough, colors, relative size, monospace, links, and super/subscript. Colors that would be illegible against the IDE theme are skipped.
 - Formatting is display only. Text sent to the device, saved as a favorite, or recorded in history is always the plain text, so styling never changes what is delivered.

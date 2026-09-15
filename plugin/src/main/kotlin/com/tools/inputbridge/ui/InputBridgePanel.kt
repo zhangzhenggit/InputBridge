@@ -82,11 +82,16 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
     private val copyButton = editorAction("Copy editor text", AllIcons.Actions.Copy, ::copyEditorText)
     private val sendButton = JButton("Send")
 
-    private var connectionState = ConnectionState.DISCONNECTED
-    private var connectedSerial: String? = null
+    private var connectionStatus = ConnectionStatus(ConnectionState.DISCONNECTED)
+    private val connectionState: ConnectionState
+        get() = connectionStatus.state
+    private var devices: List<DeviceInfo> = emptyList()
+    private var devicesLoaded = false
+    private val deviceModels = HashMap<String, String>()
     private var updatingDeviceModel = false
     private var refreshInProgress = false
-    private var lastPreparedSelection: String? = null
+    private var userDisconnected = false
+    private var deviceNoticeShown = false
     private var fetchRequested = false
     private var lastAppliedClipboard: Pair<String, Long>? = null
     private var reportedVisible = false
@@ -112,38 +117,39 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
         refreshDevices()
     }
 
+    override fun onDevicesChanged(devices: List<DeviceInfo>) = applyDevices(devices)
+
     private fun applyDevices(devices: List<DeviceInfo>) {
-        val selectedSerial = selectedDevice()?.serial ?: connectedSerial
-        updatingDeviceModel = true
-        deviceModel.removeAllElements()
-        devices.forEach(deviceModel::addElement)
-        selectSerial(selectedSerial)
-        if (deviceCombo.selectedItem == null) {
-            devices.firstOrNull(DeviceInfo::online)?.let(deviceCombo::setSelectedItem)
-        }
-        updatingDeviceModel = false
-        if (devices.isEmpty() && connectionState == ConnectionState.DISCONNECTED) {
-            showStatus("No ADB devices detected", StatusTone.ERROR)
-        } else if (devices.none(DeviceInfo::online) && connectionState == ConnectionState.DISCONNECTED) {
-            showStatus("No available ADB device", StatusTone.ERROR)
-        }
+        val previousSelection = selectedDevice()?.serial
+        this.devices = devices
+        devicesLoaded = true
+        devices.forEach { device -> device.model?.let { deviceModels[device.serial] = it } }
+
+        renderDevices()
+        showDeviceNotice()
         updateControls()
-        prepareSelectedDeviceIfNeeded()
+        autoConnect(previousSelection)
     }
 
     override fun onConnectionChanged(status: ConnectionStatus) {
-        connectionState = status.state
-        connectedSerial = status.serial
-        showStatus(
-            status.message,
-            when (status.state) {
-                ConnectionState.READY -> StatusTone.SUCCESS
-                ConnectionState.ERROR -> StatusTone.ERROR
-                else -> StatusTone.NEUTRAL
-            },
-        )
-        selectSerial(status.serial)
+        val previousSelection = selectedDevice()?.serial
+        connectionStatus = status
+        showConnectionStatus()
+        renderDevices()
         updateControls()
+        // The session often reports a lost device after the device list already changed.
+        autoConnect(previousSelection)
+    }
+
+    private fun autoConnect(previousSelection: String?) {
+        if (!devicesLoaded) return
+        DeviceChoice.autoConnectTarget(
+            devices,
+            connectionState,
+            targetSerial(),
+            previousSelection,
+            userDisconnected,
+        )?.let(service::connect)
     }
 
     override fun onClipboardChanged(update: ClipboardUpdate) {
@@ -266,17 +272,24 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
         refreshButton.addActionListener { refreshDevices() }
         connectButton.addActionListener {
             if (connectionState in ACTIVE_STATES) {
+                userDisconnected = true
                 service.disconnect()
             } else {
                 selectedDevice()?.takeIf(DeviceInfo::online)?.let {
-                    lastPreparedSelection = it.serial
+                    userDisconnected = false
                     service.connect(it.serial)
                 }
             }
         }
         deviceCombo.addActionListener {
+            if (updatingDeviceModel) return@addActionListener
             updateControls()
-            prepareSelectedDeviceIfNeeded()
+            // Picking another online device switches to it; the service replaces the current session.
+            val device = selectedDevice()?.takeIf(DeviceInfo::online) ?: return@addActionListener
+            if (device.serial != targetSerial()) {
+                userDisconnected = false
+                service.connect(device.serial)
+            }
         }
         fetchClipboardButton.addActionListener {
             fetchRequested = true
@@ -301,14 +314,14 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
     private fun refreshDevices() {
         if (refreshInProgress) return
         refreshInProgress = true
-        showStatus("Detecting ADB devices…", StatusTone.NEUTRAL)
+        showStatus("Detecting ADB devices…", StatusTone.NEUTRAL, deviceNotice = true)
         updateControls()
         service.refreshDevices { result ->
             refreshInProgress = false
             result.fold(
                 onSuccess = ::applyDevices,
                 onFailure = {
-                    showStatus(it.message ?: "Unable to detect ADB devices", StatusTone.ERROR)
+                    showStatus(it.message ?: "Unable to detect ADB devices", StatusTone.ERROR, deviceNotice = true)
                     updateControls()
                 },
             )
@@ -433,9 +446,9 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
         val active = connectionState in ACTIVE_STATES
         val ready = connectionState == ConnectionState.READY
         val selectedOnline = selectedDevice()?.online == true
-        deviceCombo.isEnabled = !active
-        refreshButton.isEnabled = !refreshInProgress &&
-            connectionState !in setOf(ConnectionState.CONNECTING, ConnectionState.RECONNECTING)
+        // Devices stay selectable while connected, so a newly attached device can be chosen directly.
+        deviceCombo.isEnabled = deviceModel.size > 0
+        refreshButton.isEnabled = !refreshInProgress
         connectButton.text = if (active) "Disconnect" else "Connect"
         connectButton.isEnabled = active || selectedOnline
         syncClipboardCheckBox.isEnabled = ready
@@ -448,23 +461,55 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
 
     private fun selectedDevice(): DeviceInfo? = deviceCombo.selectedItem as? DeviceInfo
 
-    private fun prepareSelectedDeviceIfNeeded() {
-        if (updatingDeviceModel || connectionState != ConnectionState.DISCONNECTED) return
-        val device = selectedDevice()?.takeIf(DeviceInfo::online) ?: return
-        if (lastPreparedSelection == device.serial) return
-        lastPreparedSelection = device.serial
-        service.connect(device.serial)
+    /** The device the service is connected to or trying to reach, if any. */
+    private fun targetSerial(): String? = connectionStatus.serial.takeIf { connectionState in ACTIVE_STATES }
+
+    private fun renderDevices() {
+        val target = targetSerial()
+        val entries = if (devicesLoaded) DeviceChoice.entries(devices, target, target?.let(deviceModels::get)) else emptyList()
+        val selection = DeviceChoice.selection(entries, target, selectedDevice()?.serial)
+        val current = (0 until deviceModel.size).map(deviceModel::getElementAt)
+        if (current == entries && deviceModel.selectedItem == selection) return
+        updatingDeviceModel = true
+        try {
+            if (current != entries) {
+                deviceModel.removeAllElements()
+                entries.forEach(deviceModel::addElement)
+            }
+            deviceModel.selectedItem = selection
+        } finally {
+            updatingDeviceModel = false
+        }
     }
 
-    private fun selectSerial(serial: String?) {
-        if (serial == null) return
-        (0 until deviceModel.size)
-            .map(deviceModel::getElementAt)
-            .firstOrNull { it.serial == serial }
-            ?.let(deviceCombo::setSelectedItem)
+    /** Names why nothing can connect, or replaces a finished device notice with the connection status. */
+    private fun showDeviceNotice() {
+        val notice = when {
+            connectionState != ConnectionState.DISCONNECTED -> null
+            devices.isEmpty() -> "No ADB devices detected"
+            devices.any(DeviceInfo::online) -> null
+            devices.any { it.state == DeviceInfo.UNAUTHORIZED_STATE } -> "Allow USB debugging on the device to connect"
+            else -> "No available ADB device"
+        }
+        when {
+            notice != null -> showStatus(notice, StatusTone.ERROR, deviceNotice = true)
+            deviceNoticeShown -> showConnectionStatus()
+        }
     }
 
-    private fun showStatus(message: String, tone: StatusTone) {
+    private fun showConnectionStatus() {
+        showStatus(
+            connectionStatus.message,
+            when (connectionState) {
+                ConnectionState.READY -> StatusTone.SUCCESS
+                ConnectionState.ERROR -> StatusTone.ERROR
+                else -> StatusTone.NEUTRAL
+            },
+        )
+    }
+
+    private fun showStatus(message: String, tone: StatusTone, deviceNotice: Boolean = false) {
+        deviceNoticeShown = deviceNotice
         statusLabel.text = message
         // Clipboard diagnostics outrun the label width, so the full text stays reachable.
         statusLabel.toolTipText = message
@@ -502,6 +547,7 @@ internal class InputBridgePanel(project: Project) : JPanel(BorderLayout()), Disp
             ConnectionState.CONNECTING,
             ConnectionState.READY,
             ConnectionState.RECONNECTING,
+            ConnectionState.WAITING,
             ConnectionState.SUSPENDED,
         )
     }

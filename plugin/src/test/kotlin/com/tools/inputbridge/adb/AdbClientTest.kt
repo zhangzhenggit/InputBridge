@@ -39,4 +39,22 @@ class AdbClientTest {
 
         assertEquals(listOf("tablet"), devices.map { it.serial })
     }
+
+    @Test
+    fun `parses tracked device payloads without a header`() {
+        val payload = "7d8663c                device product:TB323FU model:TB323FU device:TB323FU transport_id:3\n" +
+            "95e42ea7               unauthorized usb:1-2 transport_id:2\n"
+
+        val devices = AdbClient.parseTrackedDevices(payload)
+
+        assertEquals(listOf("7d8663c", "95e42ea7"), devices.map { it.serial })
+        assertEquals("TB323FU", devices[0].model)
+        assertTrue(devices[0].online)
+        assertEquals("unauthorized", devices[1].state)
+    }
+
+    @Test
+    fun `treats an empty tracked payload as no devices`() {
+        assertEquals(emptyList(), AdbClient.parseTrackedDevices(""))
+    }
 }

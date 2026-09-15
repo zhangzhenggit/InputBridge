@@ -12,12 +12,22 @@ InputBridge has two focused modules:
 3. It creates `adb forward tcp:0 localabstract:inputbridge_<random>` and launches the server.
 4. The server drops root to shell UID when needed and accepts exactly one connection. The JAR remains available for the lifetime of the logical device selection.
 5. After Hello, the server registers an event-driven clipboard listener and sends the current clipboard snapshot. Clipboard reads and events are serialized on the Android main looper.
-6. Both sides exchange bounded binary frames. A low-frequency heartbeat detects broken transports, and the plugin reconnects to the same requested device with bounded exponential backoff.
+6. Both sides exchange bounded binary frames. A low-frequency heartbeat detects broken transports, and the plugin reconnects to the same requested device. Failures while the device is online retry with backoff capped at 8 seconds; while the device is absent or not authorized, the plugin waits for device tracking to report it online and reconnects at once.
 7. Closing the dialog starts a 30-second grace period. If it remains closed, the plugin closes the socket and process and removes the exact ADB forward, but retains the JAR.
 8. Reopening starts a new runtime from that JAR and receives a current clipboard snapshot during startup. No event history is required to produce the latest value.
 9. Disconnect, device switch, and project close stop the runtime and remove the exact remote artifact and local extraction.
 
 No APK, service, input method, setting, boot component, or persistent process is installed. The only intentional device state change during text delivery is the device clipboard content, which is required for reliable Unicode paste.
+
+## Device discovery
+
+- While the dialog is visible, the project service follows device changes through the host ADB server's `host:track-devices-l` socket service. The `adb track-devices` command is not used because the Windows adb client rewrites line endings on stdout, which breaks the length-prefixed payload framing.
+- Tracking stops when the dialog is hidden. If the ADB server connection drops, tracking retries with backoff and starts the ADB server only after a repeated refused connection; any wait for a device falls back to timed retries until tracking resumes.
+- `Refresh` still runs `adb devices -l`; its result is discarded in favor of a newer tracking update that arrived while the command was running.
+- The device selector stays enabled while connected. Picking another online device switches the session to it, and a device that is being waited for stays listed as disconnected.
+- An idle dialog connects to the first online device whenever a device list arrives, so a device that is plugged in or authorized after the dialog opens connects without user action. After an explicit `Disconnect`, nothing connects automatically until the user connects or reopens the dialog.
+- When the session's device is detached or no longer online, including when the dialog opens without the remembered device, the dialog switches to another online device. It waits for its own device only when no other device is online, and does not switch back when that device returns.
+- A ready session is never replaced because of a device list alone; the switch happens once the session itself reports the loss, so a transient ADB state cannot end a working connection.
 
 ## Text directions
 

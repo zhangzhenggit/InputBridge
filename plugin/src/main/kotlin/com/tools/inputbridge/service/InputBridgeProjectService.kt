@@ -10,6 +10,7 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.tools.inputbridge.adb.AdbClient
 import com.tools.inputbridge.adb.AdbLocator
+import com.tools.inputbridge.adb.DeviceMonitor
 import com.tools.inputbridge.core.ClipboardUpdate
 import com.tools.inputbridge.core.ConnectionState
 import com.tools.inputbridge.core.ConnectionStatus
@@ -35,6 +36,7 @@ import kotlin.math.min
 class InputBridgeProjectService(private val project: Project) : Disposable {
     interface Listener {
         fun onConnectionChanged(status: ConnectionStatus) {}
+        fun onDevicesChanged(devices: List<DeviceInfo>) {}
         fun onClipboardChanged(update: ClipboardUpdate) {}
         fun onClipboardCleared(serial: String?) {}
         fun onInputResult(result: InputResult) {}
@@ -51,6 +53,8 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
     private val generation = AtomicInteger()
     private val runtimeGeneration = AtomicInteger()
     private val deviceRefreshGeneration = AtomicInteger()
+    private val deviceListVersion = AtomicInteger()
+    private val monitorGeneration = AtomicInteger()
     private val adb = AdbClient(AdbLocator.locate(project.basePath))
     private val historyService = ApplicationManager.getApplication().service<InputHistoryService>()
     private val pendingInputHistory = PendingInputHistory()
@@ -59,9 +63,15 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
     @Volatile private var connectionStatus = ConnectionStatus(ConnectionState.DISCONNECTED)
     @Volatile private var windowVisible = false
 
+    @Volatile private var knownDevices: List<DeviceInfo>? = null
+
+    /** True while [knownDevices] is kept current by tracking events, so waiting for an event is safe. */
+    @Volatile private var trackingDevices = false
+
     // Access to runtime resources below is confined to executor.
     private var serverLease: DeviceServerLease? = null
     private var session: InputBridgeSession? = null
+    private var deviceMonitor: DeviceMonitor? = null
     private var reconnectFuture: ScheduledFuture<*>? = null
     private var suspendFuture: ScheduledFuture<*>? = null
     private var reconnectAttempts = 0
@@ -84,8 +94,10 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
             suspendFuture?.cancel(false)
             suspendFuture = null
             if (visible) {
+                startDeviceMonitor()
                 desiredSerial?.let { resumeRuntime(it, generation.get()) }
             } else {
+                stopDeviceMonitor()
                 suspendFuture = executor.schedule({
                     if (!windowVisible) suspendRuntime()
                 }, HIDDEN_GRACE_SECONDS, TimeUnit.SECONDS)
@@ -95,13 +107,14 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
 
     fun refreshDevices(onComplete: (Result<List<DeviceInfo>>) -> Unit) {
         val requestGeneration = deviceRefreshGeneration.incrementAndGet()
+        val startVersion = deviceListVersion.get()
         AppExecutorUtil.getAppExecutorService().execute {
-            val result = runCatching { adb.listDevices() }
-            result.onSuccess {
-                LOG.info("ADB device discovery completed: ${it.size} device(s)")
-            }.onFailure {
-                LOG.warn("ADB device discovery failed", it)
+            val result = runCatching { adb.listDevices() }.map { listed ->
+                LOG.info("ADB device discovery completed: ${listed.size} device(s)")
+                // Tracking may have reported a newer list while this command was running.
+                if (deviceListVersion.get() == startVersion) listed.also(::publishDevices) else knownDevices ?: listed
             }
+            result.onFailure { LOG.warn("ADB device discovery failed", it) }
             dispatch {
                 if (deviceRefreshGeneration.get() == requestGeneration) {
                     onComplete(result)
@@ -166,11 +179,78 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
         generation.incrementAndGet()
         deviceRefreshGeneration.incrementAndGet()
         executeSafely {
+            stopDeviceMonitor()
             cancelScheduledWork()
             closeRuntime()
             releaseServerLease()
         }
         executor.shutdown()
+    }
+
+    private fun startDeviceMonitor() {
+        if (deviceMonitor != null) return
+        val token = monitorGeneration.incrementAndGet()
+        deviceMonitor = DeviceMonitor(adb, object : DeviceMonitor.Listener {
+            override fun onDevices(devices: List<DeviceInfo>) {
+                if (monitorGeneration.get() != token) return
+                trackingDevices = true
+                publishDevices(devices)
+            }
+
+            override fun onTrackingLost() {
+                if (monitorGeneration.get() != token) return
+                trackingDevices = false
+                executeSafely { resumeTimedRetries() }
+            }
+        }).also { it.start() }
+    }
+
+    private fun stopDeviceMonitor() {
+        monitorGeneration.incrementAndGet()
+        trackingDevices = false
+        deviceMonitor?.close()
+        deviceMonitor = null
+    }
+
+    private fun publishDevices(devices: List<DeviceInfo>) {
+        knownDevices = devices
+        deviceListVersion.incrementAndGet()
+        dispatch { listeners.forEach { it.onDevicesChanged(devices) } }
+        executeSafely { reconcileDesiredDevice(devices) }
+    }
+
+    /** Reconnects as soon as ADB reports the selected device online, instead of waiting for the backoff. */
+    private fun reconcileDesiredDevice(devices: List<DeviceInfo>) {
+        val serial = desiredSerial ?: return
+        val state = connectionStatus.state
+        if (!windowVisible || session != null || (state != ConnectionState.RECONNECTING && state != ConnectionState.WAITING)) {
+            return
+        }
+        if (devices.any { it.serial == serial && it.online }) {
+            reconnectFuture?.cancel(false)
+            reconnectFuture = null
+            reconnectAttempts = 0
+            connectInternal(serial, generation.get(), reconnecting = true)
+        } else if (trackingDevices) {
+            waitForDevice(serial)
+        }
+    }
+
+    /** Falls back to timed retries when a wait can no longer be ended by a tracking event. */
+    private fun resumeTimedRetries() {
+        val serial = desiredSerial ?: return
+        if (connectionStatus.state == ConnectionState.WAITING && session == null) {
+            scheduleReconnect(serial, generation.get(), "Device tracking stopped")
+        }
+    }
+
+    private fun waitForDevice(serial: String) {
+        reconnectFuture?.cancel(false)
+        reconnectFuture = null
+        val current = connectionStatus
+        if (current.state == ConnectionState.WAITING && current.serial == serial) return
+        LOG.info("Waiting for ADB to report $serial online")
+        updateStatus(ConnectionState.WAITING, serial, "Waiting for $serial to come online")
     }
 
     private fun selectDevice(serial: String, requestGeneration: Int) {
@@ -235,6 +315,7 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
                     return@onSuccess
                 }
                 reconnectAttempts = 0
+                LOG.info("Device session ready for $serial")
                 updateStatus(ConnectionState.READY, serial, "Connected to ${info.model} · Android API ${info.sdk}")
             }
             .onFailure { error ->
@@ -267,6 +348,7 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
             executeSafely {
                 if (!isActiveRuntime(serial, requestGeneration, requestRuntimeGeneration)) return@executeSafely
                 session = null
+                LOG.info("Device session for $serial ended: $message")
                 if (windowVisible) scheduleReconnect(serial, requestGeneration, message)
                 else updateSuspendedStatus(serial)
             }
@@ -280,15 +362,21 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
             return
         }
         val message = error.message ?: "Unable to connect"
+        LOG.info("Connection to $serial failed: $message")
         updateStatus(ConnectionState.ERROR, serial, message)
         scheduleReconnect(serial, requestGeneration, message)
     }
 
     private fun scheduleReconnect(serial: String, requestGeneration: Int, reason: String) {
         if (!windowVisible || !isCurrent(serial, requestGeneration)) return
+        // While devices are tracked, a device that is not online is reconnected by its tracking event.
+        if (trackingDevices && knownDevices?.none { it.serial == serial && it.online } == true) {
+            waitForDevice(serial)
+            return
+        }
         reconnectFuture?.cancel(false)
         reconnectAttempts++
-        val delaySeconds = min(30L, 1L shl min(reconnectAttempts, 5))
+        val delaySeconds = 1L shl min(reconnectAttempts, MAX_BACKOFF_SHIFT)
         updateStatus(ConnectionState.RECONNECTING, serial, "$reason · retrying in ${delaySeconds}s")
         reconnectFuture = executor.schedule({
             if (windowVisible && isCurrent(serial, requestGeneration)) {
@@ -375,5 +463,8 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
     private companion object {
         val LOG = Logger.getInstance(InputBridgeProjectService::class.java)
         const val HIDDEN_GRACE_SECONDS = 30L
+
+        /** Caps timed retries at 8 seconds; they only cover failures while the device is online. */
+        const val MAX_BACKOFF_SHIFT = 3
     }
 }
