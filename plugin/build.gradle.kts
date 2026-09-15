@@ -77,10 +77,12 @@ intellijPlatform {
     }
 
     // Signing and publishing secrets come only from the environment and never enter the repository.
+    // Signing uses an unencrypted PEM key file protected by file permissions: the zip signer cannot decrypt
+    // encrypted PEM keys, signPlugin requires a PEM key even with a keystore, and string inputs such as
+    // passwords or inline keys are persisted in Gradle's execution history, whereas files are only hashed.
     signing {
-        certificateChainFile = layout.file(providers.environmentVariable("INPUT_BRIDGE_CERTIFICATE_CHAIN_FILE").map(::File))
         privateKeyFile = layout.file(providers.environmentVariable("INPUT_BRIDGE_PRIVATE_KEY_FILE").map(::File))
-        password = providers.environmentVariable("INPUT_BRIDGE_PRIVATE_KEY_PASSWORD")
+        certificateChainFile = layout.file(providers.environmentVariable("INPUT_BRIDGE_CERTIFICATE_CHAIN_FILE").map(::File))
     }
     publishing {
         token = providers.environmentVariable("INPUT_BRIDGE_PUBLISH_TOKEN")

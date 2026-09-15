@@ -57,17 +57,27 @@ The installable archive is generated as `dist/InputBridge-<version>.zip`. The bu
    .\gradlew.bat :plugin:verifyPlugin
    ```
 
-3. Sign and publish. Keep the certificate chain and private key outside the repository and pass them through the environment:
+3. Sign. The signing key and certificate live outside the repository, in a directory readable only by your account, and are passed through the environment:
 
    ```powershell
+   $env:INPUT_BRIDGE_PRIVATE_KEY_FILE = "C:\path\outside\repo\private-key.pem"
    $env:INPUT_BRIDGE_CERTIFICATE_CHAIN_FILE = "C:\path\outside\repo\chain.crt"
-   $env:INPUT_BRIDGE_PRIVATE_KEY_FILE = "C:\path\outside\repo\private.pem"
-   $env:INPUT_BRIDGE_PRIVATE_KEY_PASSWORD = "<private key password>"
+   .\gradlew.bat :plugin:signPlugin
+   ```
+
+   The signed archive is `plugin/build/distributions/InputBridge-<version>-signed.zip`. The key must be an unencrypted PEM file: the Marketplace zip signer cannot decrypt encrypted PEM keys, and passwords or inline keys given to the Gradle task are stored in Gradle's execution history. Protect the key with file permissions and keep an offline backup. A key and certificate can be created with:
+
+   ```bash
+   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out private-key.pem
+   openssl req -new -x509 -sha256 -days 3650 -key private-key.pem -subj "/CN=<name>" -out chain.crt
+   ```
+
+4. Publish. The first version must be uploaded manually on the JetBrains Marketplace website. Later versions can be published with a Marketplace token:
+
+   ```powershell
    $env:INPUT_BRIDGE_PUBLISH_TOKEN = "<JetBrains Marketplace token>"
    .\gradlew.bat :plugin:publishPlugin
    ```
-
-   The first version of a plugin must be uploaded manually through the JetBrains Marketplace website; `publishPlugin` only updates an existing listing.
 
 Favorites and successful input history are stored as plain text in `InputBridgeFavorites.xml` and `InputBridgeHistory.xml` under the IDE configuration directory. They are not written to the current project or synchronized through the operating-system clipboard. Avoid storing or sending passwords, tokens, or private keys when local retention is enabled.
 
