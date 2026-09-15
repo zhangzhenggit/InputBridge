@@ -2,6 +2,10 @@
 
 The build copies the section for the current `pluginVersion` into the plugin's change notes, so each release needs a matching `## <version>` heading with `- ` bullet items.
 
+## 1.5.2
+
+- Exporting favorites no longer fails with a missing-method error on Android Studio 2024.3.
+
 ## 1.5.1
 
 - The status line reports each imported device clipboard, instead of keeping "Device clipboard holds no text" from an earlier blank clipboard.

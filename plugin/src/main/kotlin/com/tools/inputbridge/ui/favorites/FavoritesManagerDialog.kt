@@ -254,10 +254,13 @@ internal class FavoritesManagerDialog(
             val json = runWithProgress("Preparing favorites export") {
                 FavoritesJsonCodec.encode(current)
             }
+            // The spread selects the vararg constructor, the only one in build 243. A plain third string binds to
+            // the (String, String, String) overload added in 251, which fails with NoSuchMethodError on 2024.3.
+            @Suppress("DEPRECATION")
             val descriptor = FileSaverDescriptor(
                 "Export InputBridge favorites",
                 "Choose where to save the favorites backup",
-                "json",
+                *arrayOf("json"),
             )
             val target = FileChooserFactory.getInstance()
                 .createSaveFileDialog(descriptor, contentPanel)
