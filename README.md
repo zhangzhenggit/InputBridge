@@ -46,10 +46,35 @@ Then run:
 .\gradlew.bat buildPlugin
 ```
 
-The installable archive is generated as `dist/InputBridge-<version>.zip`. The build task removes older InputBridge archives from this directory before staging the current package.
+The installable archive is generated as `dist/InputBridge-<version>.zip`. The build task removes older InputBridge archives from this directory before staging the current package. `dist/` is not version controlled; releases are distributed through JetBrains Marketplace and GitHub Releases.
+
+## Release
+
+1. Set `pluginVersion` in `gradle.properties` and add a matching `## <version>` section to [CHANGELOG.md](CHANGELOG.md). The build turns that section into the plugin's change notes and fails if it is missing.
+2. Check binary compatibility against the configured Android Studio:
+
+   ```powershell
+   .\gradlew.bat :plugin:verifyPlugin
+   ```
+
+3. Sign and publish. Keep the certificate chain and private key outside the repository and pass them through the environment:
+
+   ```powershell
+   $env:INPUT_BRIDGE_CERTIFICATE_CHAIN_FILE = "C:\path\outside\repo\chain.crt"
+   $env:INPUT_BRIDGE_PRIVATE_KEY_FILE = "C:\path\outside\repo\private.pem"
+   $env:INPUT_BRIDGE_PRIVATE_KEY_PASSWORD = "<private key password>"
+   $env:INPUT_BRIDGE_PUBLISH_TOKEN = "<JetBrains Marketplace token>"
+   .\gradlew.bat :plugin:publishPlugin
+   ```
+
+   The first version of a plugin must be uploaded manually through the JetBrains Marketplace website; `publishPlugin` only updates an existing listing.
 
 Favorites and successful input history are stored as plain text in `InputBridgeFavorites.xml` and `InputBridgeHistory.xml` under the IDE configuration directory. They are not written to the current project or synchronized through the operating-system clipboard. Avoid storing or sending passwords, tokens, or private keys when local retention is enabled.
 
 ## Third-party code
 
-The device server contains a deliberately small, refactored subset of techniques and compatibility workarounds derived from scrcpy. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `LICENSES/Apache-2.0.txt`.
+The device server contains a deliberately small, refactored subset of techniques and compatibility workarounds derived from scrcpy. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## License
+
+InputBridge is licensed under the [Apache License 2.0](LICENSE).

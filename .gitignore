@@ -10,3 +10,12 @@ local.properties
 out/
 .DS_Store
 Thumbs.db
+
+# Release archives are published to JetBrains Marketplace and GitHub Releases, not committed.
+dist/
+
+# Plugin signing material must stay outside version control.
+*.pem
+*.crt
+*.key
+*.p12

@@ -39,6 +39,8 @@ dependencies {
     intellijPlatform {
         local(studioPath)
         bundledPlugin("org.jetbrains.android")
+        pluginVerifier()
+        zipSigner()
     }
     testImplementation(kotlin("test"))
 }
@@ -47,12 +49,47 @@ kotlin {
     jvmToolchain(21)
 }
 
+/** Renders the CHANGELOG.md section for the current version as the Marketplace change notes. */
+val releaseChangeNotes = provider {
+    val changelog = rootProject.file("CHANGELOG.md").readText()
+    val section = Regex("^## ${Regex.escape(pluginVersion)}\\s*$(.*?)(?=^## |\\z)", setOf(RegexOption.MULTILINE, RegexOption.DOT_MATCHES_ALL))
+        .find(changelog)
+        ?.groupValues
+        ?.get(1)
+        ?: error("CHANGELOG.md has no section for version $pluginVersion.")
+    val items = section.lines().map(String::trim).filter { it.startsWith("- ") }.map { item ->
+        item.removePrefix("- ")
+            .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace(Regex("`([^`]+)`"), "<code>$1</code>")
+    }
+    check(items.isNotEmpty()) { "CHANGELOG.md section $pluginVersion has no items." }
+    items.joinToString(separator = "", prefix = "<ul>", postfix = "</ul>") { "<li>$it</li>" }
+}
+
 intellijPlatform {
     buildSearchableOptions = false
     instrumentCode = false
     pluginConfiguration {
+        changeNotes = releaseChangeNotes
         ideaVersion {
             sinceBuild = pluginSinceBuild
+        }
+    }
+
+    // Signing and publishing secrets come only from the environment and never enter the repository.
+    signing {
+        certificateChainFile = layout.file(providers.environmentVariable("INPUT_BRIDGE_CERTIFICATE_CHAIN_FILE").map(::File))
+        privateKeyFile = layout.file(providers.environmentVariable("INPUT_BRIDGE_PRIVATE_KEY_FILE").map(::File))
+        password = providers.environmentVariable("INPUT_BRIDGE_PRIVATE_KEY_PASSWORD")
+    }
+    publishing {
+        token = providers.environmentVariable("INPUT_BRIDGE_PUBLISH_TOKEN")
+    }
+
+    // The release lists are intentionally empty (see gradle.properties), so verification uses the local IDE.
+    pluginVerification {
+        ides {
+            local(studioPath)
         }
     }
 }
@@ -60,10 +97,6 @@ intellijPlatform {
 val serverArtifact = project(":server").layout.buildDirectory.file("dist/inputbridge-server.jar")
 
 tasks {
-    patchPluginXml {
-        sinceBuild = pluginSinceBuild
-    }
-
     processResources {
         dependsOn(":server:buildServer")
         from(serverArtifact) {

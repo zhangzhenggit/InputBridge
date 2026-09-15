@@ -26,6 +26,13 @@ Run compilation and checks:
 .\gradlew.bat verifyProject
 ```
 
+## Releases
+
+- The plugin ID is `io.zheng.inputbridge` and must never change; Kotlin and Java packages keep `com.tools.inputbridge`.
+- Every `pluginVersion` needs a matching `## <version>` section in `CHANGELOG.md`; the build fails without it.
+- `dist/` is build output and is not committed. Publish archives through JetBrains Marketplace and GitHub Releases.
+- Signing keys and the Marketplace token are read from `INPUT_BRIDGE_*` environment variables. Never commit them or place them inside the repository.
+
 ## Constraints
 
 - Never log clipboard or input text.

@@ -1,12 +1,19 @@
 <idea-plugin>
-    <id>com.tools.inputbridge</id>
+    <id>io.zheng.inputbridge</id>
     <name>InputBridge</name>
-    <vendor>zheng</vendor>
+    <vendor email="zhangzhenggk@gmail.com" url="https://github.com/zhangzhenggit/InputBridge">Zheng Zhang</vendor>
 
     <description><![CDATA[
-    Sends Unicode text to the focused control on an ADB-connected Android device,
-    displays device text clipboard changes in real time, and stores titled favorites
-    and successful input history locally.
+    <p>Type on an ADB-connected Android device from Android Studio, and bring its clipboard back.</p>
+    <ul>
+      <li><b>Unicode input</b>: send any text, including CJK characters and emoji, to the focused control on the device, optionally replacing the text it already holds.</li>
+      <li><b>Device clipboard</b>: fetch the device clipboard on demand or follow its changes live, with bold, italic, colors, links, and other formatting shown in the editor.</li>
+      <li><b>Multiple devices</b>: the device list follows USB attach, detach, and authorization changes, devices can be switched from the dialog, and dropped connections recover automatically.</li>
+      <li><b>Favorites and history</b>: save titled snippets that can be searched, reordered, imported, and exported, and restore recently delivered input.</li>
+    </ul>
+    <p><b>How it works.</b> InputBridge pushes a small helper JAR to <code>/data/local/tmp</code> and runs it with <code>app_process</code> over ADB. No APK is installed and the input method is not changed. The helper is removed when you disconnect, switch devices, or close the project.</p>
+    <p><b>Privacy.</b> Text, clipboard content, favorites, and history stay on your computer and device. InputBridge collects no telemetry and sends nothing over the network.</p>
+    <p>Open it from <b>Tools | InputBridge</b> or the main toolbar. Requires Android 8.0 or newer with USB debugging enabled.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>

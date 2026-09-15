@@ -45,7 +45,6 @@ data class ClipboardUpdate(
     val sequence: Long,
     val text: String?,
     val runs: List<TextStyleRun> = emptyList(),
-    val receivedAtMillis: Long = System.currentTimeMillis(),
 )
 
 data class InputResult(

@@ -171,8 +171,6 @@ class InputBridgeProjectService(private val project: Project) : Disposable {
         }
     }
 
-    fun currentStatus(): ConnectionStatus = connectionStatus
-
     override fun dispose() {
         windowVisible = false
         desiredSerial = null
