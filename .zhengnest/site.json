@@ -1,0 +1,24 @@
+{
+  "tagline": "为 ADB 设备架起输入桥梁：任意 Unicode 文本直达，剪贴板实时同步。",
+  "icon": "phone",
+  "color": "#8b7cf6",
+  "highlights": [
+    {
+      "title": "Unicode 直达",
+      "text": "中文、表情与特殊符号经同一通路粘入当前焦点控件。"
+    },
+    {
+      "title": "设备自动跟随",
+      "text": "插拔与授权变化实时反映，无需手动刷新。"
+    },
+    {
+      "title": "不留痕迹",
+      "text": "不安装 APK，不改输入法，断开即清理。"
+    }
+  ],
+  "install": [
+    "从 JetBrains Marketplace 安装，或下载插件 ZIP",
+    "Settings → Plugins → ⚙ → Install Plugin from Disk",
+    "重启 IDE，Tools 菜单出现 InputBridge"
+  ]
+}
