@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>io.zheng.inputbridge</id>
     <name>InputBridge</name>
-    <vendor email="zhangzhenggk@gmail.com" url="https://github.com/zhangzhenggit/InputBridge">Zheng Zhang</vendor>
+    <vendor email="zhangzhenggk@gmail.com" url="https://zhengnest.com">Zheng Zhang</vendor>
 
     <description><![CDATA[
     <p>Type on an ADB-connected Android device from Android Studio, and bring its clipboard back.</p>
