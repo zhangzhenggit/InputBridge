@@ -2,6 +2,11 @@
 
 The build copies the section for the current `pluginVersion` into the plugin's change notes, so each release needs a matching `## <version>` heading with `- ` bullet items.
 
+## 1.5.3
+
+- Requires Android Studio Narwhal 2025.1.1 or newer; Android Studio Meerkat 2024.3 is no longer supported.
+- Exporting favorites uses the current file-save API instead of a deprecated one.
+
 ## 1.5.2
 
 - Exporting favorites no longer fails with a missing-method error on Android Studio 2024.3.
